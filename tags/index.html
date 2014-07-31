@@ -1,0 +1,2374 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Linux Kernel Architecture 内核笔记|内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <meta content="Linux Kernel Architecture 内核笔记" name="description"/>
+  <meta content="Linux,Kernel,Architecture,内核,笔记" name="keywords"/>
+</head>
+<body>
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+<div class="main">
+<div class="title">标记</div>
+<div class="content">
+	<p>方便索引：</p>
+
+<div class="tagcloud">
+
+<span class=""><a href="#感受">感受</a></span>
+
+<span class=""><a href="#heap">heap</a></span>
+
+<span class=""><a href="#堆">堆</a></span>
+
+<span class=""><a href="#数据结构">数据结构</a></span>
+
+<span class=""><a href="#微内核">微内核</a></span>
+
+<span class=""><a href="#宏内核">宏内核</a></span>
+
+<span class=""><a href="#模块">模块</a></span>
+
+<span class=""><a href="#代码结构">代码结构</a></span>
+
+<span class=""><a href="#进程">进程</a></span>
+
+<span class=""><a href="#切换">切换</a></span>
+
+<span class=""><a href="#调度">调度</a></span>
+
+<span class=""><a href="#线程">线程</a></span>
+
+<span class=""><a href="#命名空间">命名空间</a></span>
+
+<span class=""><a href="#LRU">LRU</a></span>
+
+<span class=""><a href="#最近最少使用">最近最少使用</a></span>
+
+<span class=""><a href="#文件">文件</a></span>
+
+<span class=""><a href="#红黑树">红黑树</a></span>
+
+<span class=""><a href="#查找树">查找树</a></span>
+
+<span class=""><a href="#task_size">task_size</a></span>
+
+<span class=""><a href="#进程实现">进程实现</a></span>
+
+<span class=""><a href="#内核">内核</a></span>
+
+<span class=""><a href="#重入">重入</a></span>
+
+<span class=""><a href="#内核控制路径">内核控制路径</a></span>
+
+<span class=""><a href="#一致性">一致性</a></span>
+
+<span class=""><a href="#抢占式">抢占式</a></span>
+
+<span class=""><a href="#中断">中断</a></span>
+
+<span class=""><a href="#信号量">信号量</a></span>
+
+<span class=""><a href="#僵尸进程">僵尸进程</a></span>
+
+<span class=""><a href="#内存">内存</a></span>
+
+<span class=""><a href="#UMA">UMA</a></span>
+
+<span class=""><a href="#NUMA">NUMA</a></span>
+
+<span class=""><a href="#轻量级进程">轻量级进程</a></span>
+
+<span class=""><a href="#进程描述符">进程描述符</a></span>
+
+<span class=""><a href="#进程状态">进程状态</a></span>
+
+<span class=""><a href="#task_struct">task_struct</a></span>
+
+<span class=""><a href="#资源限制">资源限制</a></span>
+
+<span class=""><a href="#优先级">优先级</a></span>
+
+<span class=""><a href="#生命周期">生命周期</a></span>
+
+<span class=""><a href="#多任务处理">多任务处理</a></span>
+
+<span class=""><a href="#标识进程">标识进程</a></span>
+
+<span class=""><a href="#描述符">描述符</a></span>
+
+<span class=""><a href="#页框">页框</a></span>
+
+<span class=""><a href="#全局ID">全局ID</a></span>
+
+<span class=""><a href="#局部ID">局部ID</a></span>
+
+<span class=""><a href="#进程链表">进程链表</a></span>
+
+<span class=""><a href="#run_list">run_list</a></span>
+
+<span class=""><a href="#父进程">父进程</a></span>
+
+<span class=""><a href="#子进程">子进程</a></span>
+
+<span class=""><a href="#写时复制">写时复制</a></span>
+
+<span class=""><a href="#fork">fork</a></span>
+
+<span class=""><a href="#vfork">vfork</a></span>
+
+<span class=""><a href="#pidhash">pidhash</a></span>
+
+<span class=""><a href="#等待队列">等待队列</a></span>
+
+<span class=""><a href="#互斥进程">互斥进程</a></span>
+
+<span class=""><a href="#内核线程">内核线程</a></span>
+
+<span class=""><a href="#idel">idel</a></span>
+
+<span class=""><a href="#swapper">swapper</a></span>
+
+<span class=""><a href="#init">init</a></span>
+
+<span class=""><a href="#守护进程">守护进程</a></span>
+
+<span class=""><a href="#clone">clone</a></span>
+
+<span class=""><a href="#do_fork">do_fork</a></span>
+
+<span class=""><a href="#copy_process">copy_process</a></span>
+
+<span class=""><a href="#进程替换">进程替换</a></span>
+
+<span class=""><a href="#execve">execve</a></span>
+
+<span class=""><a href="#进程撤销">进程撤销</a></span>
+
+<span class=""><a href="#do_group_exit">do_group_exit</a></span>
+
+<span class=""><a href="#do_exit">do_exit</a></span>
+
+<span class=""><a href="#进程切换">进程切换</a></span>
+
+<span class=""><a href="#硬件上下文">硬件上下文</a></span>
+
+<span class=""><a href="#上下文切换">上下文切换</a></span>
+
+<span class=""><a href="#schedule">schedule</a></span>
+
+<span class=""><a href="#switch_to">switch_to</a></span>
+
+<span class=""><a href="#内存寻址">内存寻址</a></span>
+
+<span class=""><a href="#逻辑地址">逻辑地址</a></span>
+
+<span class=""><a href="#线性地址">线性地址</a></span>
+
+<span class=""><a href="#物理地址">物理地址</a></span>
+
+<span class=""><a href="#内存控制单元">内存控制单元</a></span>
+
+<span class=""><a href="#MMU">MMU</a></span>
+
+<span class=""><a href="#段选择符">段选择符</a></span>
+
+<span class=""><a href="#段寄存器">段寄存器</a></span>
+
+<span class=""><a href="#特权级">特权级</a></span>
+
+<span class=""><a href="#CPL">CPL</a></span>
+
+<span class=""><a href="#用户态">用户态</a></span>
+
+<span class=""><a href="#内核态">内核态</a></span>
+
+<span class=""><a href="#段描述符">段描述符</a></span>
+
+<span class=""><a href="#全局描述符表">全局描述符表</a></span>
+
+<span class=""><a href="#代码段">代码段</a></span>
+
+<span class=""><a href="#数据段">数据段</a></span>
+
+<span class=""><a href="#任务状态段">任务状态段</a></span>
+
+<span class=""><a href="#TSS">TSS</a></span>
+
+<span class=""><a href="#分段单元">分段单元</a></span>
+
+<span class=""><a href="#分段">分段</a></span>
+
+<span class=""><a href="#GDT">GDT</a></span>
+
+<span class=""><a href="#RPL">RPL</a></span>
+
+<span class=""><a href="#TLS">TLS</a></span>
+
+<span class=""><a href="#页">页</a></span>
+
+<span class=""><a href="#页表">页表</a></span>
+
+<span class=""><a href="#页帧">页帧</a></span>
+
+<span class=""><a href="#分页">分页</a></span>
+
+<span class=""><a href="#扩展分页">扩展分页</a></span>
+
+<span class=""><a href="#冷热页">冷热页</a></span>
+
+<span class=""><a href="#物理地址扩展">物理地址扩展</a></span>
+
+<span class=""><a href="#PAE">PAE</a></span>
+
+<span class=""><a href="#硬件高速缓存">硬件高速缓存</a></span>
+
+<span class=""><a href="#缓存">缓存</a></span>
+
+<span class=""><a href="#TLB">TLB</a></span>
+
+<span class=""><a href="#页目录">页目录</a></span>
+
+<span class=""><a href="#页目录指针表">页目录指针表</a></span>
+
+<span class=""><a href="#PDPT">PDPT</a></span>
+
+<span class=""><a href="#页描述符">页描述符</a></span>
+
+<span class=""><a href="#page">page</a></span>
+
+<span class=""><a href="#物理内存">物理内存</a></span>
+
+<span class=""><a href="#物理内存布局">物理内存布局</a></span>
+
+<span class=""><a href="#进程页表">进程页表</a></span>
+
+<span class=""><a href="#内核页表">内核页表</a></span>
+
+<span class=""><a href="#实模式">实模式</a></span>
+
+<span class=""><a href="#保护模式">保护模式</a></span>
+
+<span class=""><a href="#内存域">内存域</a></span>
+
+<span class=""><a href="#内存管理区">内存管理区</a></span>
+
+<span class=""><a href="#分区">分区</a></span>
+
+<span class=""><a href="#页框分配器">页框分配器</a></span>
+
+<span class=""><a href="#高端内存">高端内存</a></span>
+
+<span class=""><a href="#内核映射">内核映射</a></span>
+
+<span class=""><a href="#初始化">初始化</a></span>
+
+<span class=""><a href="#内存管理">内存管理</a></span>
+
+<span class=""><a href="#异常">异常</a></span>
+
+<span class=""><a href="#内核抢占">内核抢占</a></span>
+
+<span class=""><a href="#临界区">临界区</a></span>
+
+<span class=""><a href="#读写安全">读写安全</a></span>
+
+<span class=""><a href="#per-CPU">per-CPU</a></span>
+
+<span class=""><a href="#定时测量">定时测量</a></span>
+
+<span class=""><a href="#原子操作">原子操作</a></span>
+
+<span class=""><a href="#时钟">时钟</a></span>
+
+<span class=""><a href="#定时器电路">定时器电路</a></span>
+
+<span class=""><a href="#RTC">RTC</a></span>
+
+<span class=""><a href="#TSC">TSC</a></span>
+
+<span class=""><a href="#PIT">PIT</a></span>
+
+<span class=""><a href="#ACPI">ACPI</a></span>
+
+<span class=""><a href="#内存屏障">内存屏障</a></span>
+
+<span class=""><a href="#计时">计时</a></span>
+
+<span class=""><a href="#伙伴系统">伙伴系统</a></span>
+
+<span class=""><a href="#反碎片">反碎片</a></span>
+
+<span class=""><a href="#内存碎片">内存碎片</a></span>
+
+<span class=""><a href="#自旋锁">自旋锁</a></span>
+
+<span class=""><a href="#spin_lock">spin_lock</a></span>
+
+<span class=""><a href="#内存空间">内存空间</a></span>
+
+<span class=""><a href="#结点">结点</a></span>
+
+<span class=""><a href="#IRQ">IRQ</a></span>
+
+<span class=""><a href="#APIC">APIC</a></span>
+
+<span class=""><a href="#PIC">PIC</a></span>
+
+<span class=""><a href="#分配页">分配页</a></span>
+
+<span class=""><a href="#IDT">IDT</a></span>
+
+<span class=""><a href="#中断描述符表">中断描述符表</a></span>
+
+<span class=""><a href="#顺序锁">顺序锁</a></span>
+
+<span class=""><a href="#嵌套执行">嵌套执行</a></span>
+
+<span class=""><a href="#释放页">释放页</a></span>
+
+<span class=""><a href="#RCU">RCU</a></span>
+
+<span class=""><a href="#读-拷贝-更新">读-拷贝-更新</a></span>
+
+<span class=""><a href="#内核信号量">内核信号量</a></span>
+
+<span class=""><a href="#不连续页">不连续页</a></span>
+
+<span class=""><a href="#中断处理">中断处理</a></span>
+
+<span class=""><a href="#动态分配">动态分配</a></span>
+
+<span class=""><a href="#slab">slab</a></span>
+
+<span class=""><a href="#分配器">分配器</a></span>
+
+<span class=""><a href="#备选分配器">备选分配器</a></span>
+
+<span class=""><a href="#软中断">软中断</a></span>
+
+<span class=""><a href="#tasklet">tasklet</a></span>
+
+<span class=""><a href="#ksoftirqd">ksoftirqd</a></span>
+
+<span class=""><a href="#完成量">完成量</a></span>
+
+<span class=""><a href="#文件系统">文件系统</a></span>
+
+<span class=""><a href="#VFS">VFS</a></span>
+
+<span class=""><a href="#文件模型">文件模型</a></span>
+
+<span class=""><a href="#系统调用">系统调用</a></span>
+
+<span class=""><a href="#工作队列">工作队列</a></span>
+
+<span class=""><a href="#超级块">超级块</a></span>
+
+<span class=""><a href="#inode">inode</a></span>
+
+<span class=""><a href="#索引节点">索引节点</a></span>
+
+<span class=""><a href="#释放">释放</a></span>
+
+<span class=""><a href="#目录项">目录项</a></span>
+
+<span class=""><a href="#高速缓存">高速缓存</a></span>
+
+</div>
+
+<div class="year" id="感受"><h3>感受</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/start/" title="写在开始">写在开始</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="heap"><h3>heap</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/heap/" title="堆">堆</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="堆"><h3>堆</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/heap/" title="堆">堆</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="数据结构"><h3>数据结构</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/heap/" title="堆">堆</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="微内核"><h3>微内核</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/how-kernel-work/" title="内核">内核</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="宏内核"><h3>宏内核</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/how-kernel-work/" title="内核">内核</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="模块"><h3>模块</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/how-kernel-work/" title="内核">内核</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="代码结构"><h3>代码结构</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/how-kernel-work/" title="内核">内核</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="进程"><h3>进程</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/parts-of-kernel/" title="内核的体系结构">内核的体系结构</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/zombie-process/" title="僵尸进程">僵尸进程</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-life/" title="进程生命周期">进程生命周期</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-type-and-namespace/" title="进程类型和命名空间">进程类型和命名空间</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="切换"><h3>切换</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/parts-of-kernel/" title="内核的体系结构">内核的体系结构</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="调度"><h3>调度</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/parts-of-kernel/" title="内核的体系结构">内核的体系结构</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="线程"><h3>线程</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/parts-of-kernel/" title="内核的体系结构">内核的体系结构</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process/" title="进程、轻量级进程和线程">进程、轻量级进程和线程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="命名空间"><h3>命名空间</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/parts-of-kernel/" title="内核的体系结构">内核的体系结构</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-type-and-namespace/" title="进程类型和命名空间">进程类型和命名空间</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/one-process/" title="标识进程">标识进程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="LRU"><h3>LRU</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/lru/" title="LRU">LRU</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="最近最少使用"><h3>最近最少使用</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/lru/" title="LRU">LRU</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="文件"><h3>文件</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/what-is-file/" title="Unix文件系统">Unix文件系统</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/file-object/" title="文件对象">文件对象</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="红黑树"><h3>红黑树</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/red-and-black-tree-with-c-code/" title="红黑树">红黑树</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="查找树"><h3>查找树</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/red-and-black-tree-with-c-code/" title="红黑树">红黑树</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="task_size"><h3>task_size</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/task-size/" title="进程地址空间">进程地址空间</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="进程实现"><h3>进程实现</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/progress-model/" title="进程内核模式">进程内核模式</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内核"><h3>内核</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/reentrant-kernel/" title="可重入内核">可重入内核</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/consistent-of-kernel/" title="内核一致性">内核一致性</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/kernel-mm-management/" title="内核中的内存管理">内核中的内存管理</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="重入"><h3>重入</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/reentrant-kernel/" title="可重入内核">可重入内核</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内核控制路径"><h3>内核控制路径</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/reentrant-kernel/" title="可重入内核">可重入内核</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/loop-interrupt/" title="处理程序的嵌套执行">处理程序的嵌套执行</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="一致性"><h3>一致性</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/consistent-of-kernel/" title="内核一致性">内核一致性</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="抢占式"><h3>抢占式</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/consistent-of-kernel/" title="内核一致性">内核一致性</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-life/" title="进程生命周期">进程生命周期</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="中断"><h3>中断</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/consistent-of-kernel/" title="内核一致性">内核一致性</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/interrupt/" title="中断和异常">中断和异常</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/irq-and-interrupt/" title="IRQ和中断">IRQ和中断</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/loop-interrupt/" title="处理程序的嵌套执行">处理程序的嵌套执行</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/return-from-interrupt-or-exception/" title="从中断和异常返回">从中断和异常返回</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="信号量"><h3>信号量</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/consistent-of-kernel/" title="内核一致性">内核一致性</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/signal/" title="进程间的通信">进程间的通信</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/kernel-semaphore/" title="内核信号量">内核信号量</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="僵尸进程"><h3>僵尸进程</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/zombie-process/" title="僵尸进程">僵尸进程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内存"><h3>内存</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/mm-management/" title="内存管理">内存管理</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-and-page-descriptor/" title="页及其描述符">页及其描述符</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/physical-memory/" title="物理内存布局">物理内存布局</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pglist-data-and-zone/" title="内存管理区">内存管理区</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/vmalloc/" title="不连续页的分配">不连续页的分配</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/kernel-mm-management/" title="内核中的内存管理">内核中的内存管理</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="UMA"><h3>UMA</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/mm-management/" title="内存管理">内存管理</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-and-page-descriptor/" title="页及其描述符">页及其描述符</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pglist-data-and-zone/" title="内存管理区">内存管理区</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="NUMA"><h3>NUMA</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/mm-management/" title="内存管理">内存管理</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-and-page-descriptor/" title="页及其描述符">页及其描述符</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pglist-data-and-zone/" title="内存管理区">内存管理区</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="轻量级进程"><h3>轻量级进程</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process/" title="进程、轻量级进程和线程">进程、轻量级进程和线程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="进程描述符"><h3>进程描述符</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-descriptor/" title="进程描述符">进程描述符</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="进程状态"><h3>进程状态</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-descriptor/" title="进程描述符">进程描述符</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="task_struct"><h3>task_struct</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-descriptor/" title="进程描述符">进程描述符</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/one-process/" title="标识进程">标识进程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="资源限制"><h3>资源限制</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-descriptor/" title="进程描述符">进程描述符</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="优先级"><h3>优先级</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-priority/" title="进程优先级">进程优先级</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="生命周期"><h3>生命周期</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-life/" title="进程生命周期">进程生命周期</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="多任务处理"><h3>多任务处理</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-life/" title="进程生命周期">进程生命周期</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="标识进程"><h3>标识进程</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/one-process/" title="标识进程">标识进程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="描述符"><h3>描述符</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/one-process/" title="标识进程">标识进程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="页框"><h3>页框</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/one-process/" title="标识进程">标识进程</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/system-paging-unit/" title="硬件中的分页">硬件中的分页</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-frame-allocator/" title="分区页框分配器">分区页框分配器</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/highmem/" title="高端内存页框的内核映射">高端内存页框的内核映射</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="全局ID"><h3>全局ID</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/one-process/" title="标识进程">标识进程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="局部ID"><h3>局部ID</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/one-process/" title="标识进程">标识进程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="进程链表"><h3>进程链表</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-list/" title="进程链表">进程链表</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="run_list"><h3>run_list</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-list/" title="进程链表">进程链表</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="父进程"><h3>父进程</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-relationship/" title="进程之间的关系">进程之间的关系</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="子进程"><h3>子进程</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-relationship/" title="进程之间的关系">进程之间的关系</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="写时复制"><h3>写时复制</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-relationship/" title="进程之间的关系">进程之间的关系</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/clone-fork-and-vfork/" title="进程复制">进程复制</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="fork"><h3>fork</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-relationship/" title="进程之间的关系">进程之间的关系</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/clone-fork-and-vfork/" title="进程复制">进程复制</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="vfork"><h3>vfork</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-relationship/" title="进程之间的关系">进程之间的关系</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/clone-fork-and-vfork/" title="进程复制">进程复制</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="pidhash"><h3>pidhash</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-relationship/" title="进程之间的关系">进程之间的关系</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/clone-fork-and-vfork/" title="进程复制">进程复制</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="等待队列"><h3>等待队列</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-waiting-link-list/" title="组织进程">组织进程</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/wait-queue/" title="等待队列">等待队列</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="互斥进程"><h3>互斥进程</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-waiting-link-list/" title="组织进程">组织进程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内核线程"><h3>内核线程</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/the-kernel-thread/" title="内核线程">内核线程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="idel"><h3>idel</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/the-kernel-thread/" title="内核线程">内核线程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="swapper"><h3>swapper</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/the-kernel-thread/" title="内核线程">内核线程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="init"><h3>init</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/the-kernel-thread/" title="内核线程">内核线程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="守护进程"><h3>守护进程</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/the-kernel-thread/" title="内核线程">内核线程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="clone"><h3>clone</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/clone-fork-and-vfork/" title="进程复制">进程复制</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="do_fork"><h3>do_fork</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/clone-fork-and-vfork/" title="进程复制">进程复制</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="copy_process"><h3>copy_process</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/clone-fork-and-vfork/" title="进程复制">进程复制</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="进程替换"><h3>进程替换</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/execve-replace-process/" title="进程替换">进程替换</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="execve"><h3>execve</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/execve-replace-process/" title="进程替换">进程替换</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="进程撤销"><h3>进程撤销</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/group-exit-and-do-exit-a-process/" title="进程退出">进程退出</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="do_group_exit"><h3>do_group_exit</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/group-exit-and-do-exit-a-process/" title="进程退出">进程退出</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="do_exit"><h3>do_exit</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/group-exit-and-do-exit-a-process/" title="进程退出">进程退出</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="进程切换"><h3>进程切换</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-switch/" title="进程切换">进程切换</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="硬件上下文"><h3>硬件上下文</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-switch/" title="进程切换">进程切换</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="上下文切换"><h3>上下文切换</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-switch/" title="进程切换">进程切换</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="schedule"><h3>schedule</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-switch/" title="进程切换">进程切换</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="switch_to"><h3>switch_to</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-switch/" title="进程切换">进程切换</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内存寻址"><h3>内存寻址</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-address/" title="内存地址">内存地址</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="逻辑地址"><h3>逻辑地址</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-address/" title="内存地址">内存地址</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="线性地址"><h3>线性地址</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-address/" title="内存地址">内存地址</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="物理地址"><h3>物理地址</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-address/" title="内存地址">内存地址</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内存控制单元"><h3>内存控制单元</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-address/" title="内存地址">内存地址</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="MMU"><h3>MMU</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-address/" title="内存地址">内存地址</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="段选择符"><h3>段选择符</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-selector/" title="段选择符和段寄存器">段选择符和段寄存器</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="段寄存器"><h3>段寄存器</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-selector/" title="段选择符和段寄存器">段选择符和段寄存器</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="特权级"><h3>特权级</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-selector/" title="段选择符和段寄存器">段选择符和段寄存器</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="CPL"><h3>CPL</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-selector/" title="段选择符和段寄存器">段选择符和段寄存器</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="用户态"><h3>用户态</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-selector/" title="段选择符和段寄存器">段选择符和段寄存器</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内核态"><h3>内核态</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-selector/" title="段选择符和段寄存器">段选择符和段寄存器</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="段描述符"><h3>段描述符</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-descriptor/" title="段描述符">段描述符</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/visit-segment-descriptor/" title="访问段描述符及分段单元">访问段描述符及分段单元</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="全局描述符表"><h3>全局描述符表</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-descriptor/" title="段描述符">段描述符</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-in-linux/" title="Linux中的分段">Linux中的分段</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="代码段"><h3>代码段</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-descriptor/" title="段描述符">段描述符</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="数据段"><h3>数据段</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-descriptor/" title="段描述符">段描述符</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="任务状态段"><h3>任务状态段</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-descriptor/" title="段描述符">段描述符</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="TSS"><h3>TSS</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-descriptor/" title="段描述符">段描述符</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="分段单元"><h3>分段单元</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/visit-segment-descriptor/" title="访问段描述符及分段单元">访问段描述符及分段单元</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="分段"><h3>分段</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-in-linux/" title="Linux中的分段">Linux中的分段</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="GDT"><h3>GDT</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-in-linux/" title="Linux中的分段">Linux中的分段</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="RPL"><h3>RPL</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-in-linux/" title="Linux中的分段">Linux中的分段</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="TLS"><h3>TLS</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/segment-in-linux/" title="Linux中的分段">Linux中的分段</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="页"><h3>页</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/system-paging-unit/" title="硬件中的分页">硬件中的分页</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/alloc-page/" title="分配页">分配页</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="页表"><h3>页表</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/system-paging-unit/" title="硬件中的分页">硬件中的分页</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/thread-page-table-and-kernel-page-table/" title="进程页表页和内核页表">进程页表页和内核页表</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-and-page-table/" title="页表的数据结构">页表的数据结构</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="页帧"><h3>页帧</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/system-paging-unit/" title="硬件中的分页">硬件中的分页</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-and-page-table/" title="页表的数据结构">页表的数据结构</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="分页"><h3>分页</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/system-paging-unit/" title="硬件中的分页">硬件中的分页</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pae/" title="扩展分页PAE机制">扩展分页PAE机制</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/linux-paging/" title="Linux中的分页">Linux中的分页</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="扩展分页"><h3>扩展分页</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/system-paging-unit/" title="硬件中的分页">硬件中的分页</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pae/" title="扩展分页PAE机制">扩展分页PAE机制</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="冷热页"><h3>冷热页</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/system-paging-unit/" title="硬件中的分页">硬件中的分页</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pglist-data-and-zone/" title="内存管理区">内存管理区</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="物理地址扩展"><h3>物理地址扩展</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pae/" title="扩展分页PAE机制">扩展分页PAE机制</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="PAE"><h3>PAE</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pae/" title="扩展分页PAE机制">扩展分页PAE机制</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="硬件高速缓存"><h3>硬件高速缓存</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/system-hardware-cache-and-tlb/" title="硬件高速缓存和TLB">硬件高速缓存和TLB</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="缓存"><h3>缓存</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/system-hardware-cache-and-tlb/" title="硬件高速缓存和TLB">硬件高速缓存和TLB</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="TLB"><h3>TLB</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/system-hardware-cache-and-tlb/" title="硬件高速缓存和TLB">硬件高速缓存和TLB</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="页目录"><h3>页目录</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/linux-paging/" title="Linux中的分页">Linux中的分页</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="页目录指针表"><h3>页目录指针表</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/linux-paging/" title="Linux中的分页">Linux中的分页</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="PDPT"><h3>PDPT</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/linux-paging/" title="Linux中的分页">Linux中的分页</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="页描述符"><h3>页描述符</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-and-page-descriptor/" title="页及其描述符">页及其描述符</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="page"><h3>page</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-and-page-descriptor/" title="页及其描述符">页及其描述符</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="物理内存"><h3>物理内存</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/physical-memory/" title="物理内存布局">物理内存布局</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="物理内存布局"><h3>物理内存布局</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/physical-memory/" title="物理内存布局">物理内存布局</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="进程页表"><h3>进程页表</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/thread-page-table-and-kernel-page-table/" title="进程页表页和内核页表">进程页表页和内核页表</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内核页表"><h3>内核页表</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/thread-page-table-and-kernel-page-table/" title="进程页表页和内核页表">进程页表页和内核页表</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="实模式"><h3>实模式</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/thread-page-table-and-kernel-page-table/" title="进程页表页和内核页表">进程页表页和内核页表</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="保护模式"><h3>保护模式</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/thread-page-table-and-kernel-page-table/" title="进程页表页和内核页表">进程页表页和内核页表</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内存域"><h3>内存域</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pglist-data-and-zone/" title="内存管理区">内存管理区</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/init-mm-zone-and-page/" title="初始化内存域和结点">初始化内存域和结点</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内存管理区"><h3>内存管理区</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pglist-data-and-zone/" title="内存管理区">内存管理区</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="分区"><h3>分区</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-frame-allocator/" title="分区页框分配器">分区页框分配器</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="页框分配器"><h3>页框分配器</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-frame-allocator/" title="分区页框分配器">分区页框分配器</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="高端内存"><h3>高端内存</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/highmem/" title="高端内存页框的内核映射">高端内存页框的内核映射</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内核映射"><h3>内核映射</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/highmem/" title="高端内存页框的内核映射">高端内存页框的内核映射</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="初始化"><h3>初始化</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/init-mm-management/" title="初始化内存管理">初始化内存管理</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内存管理"><h3>内存管理</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/init-mm-management/" title="初始化内存管理">初始化内存管理</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="异常"><h3>异常</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/interrupt/" title="中断和异常">中断和异常</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/exception/" title="异常定义">异常定义</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/loop-interrupt/" title="处理程序的嵌套执行">处理程序的嵌套执行</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/working-on-exception/" title="异常处理">异常处理</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/return-from-interrupt-or-exception/" title="从中断和异常返回">从中断和异常返回</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内核抢占"><h3>内核抢占</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/kernel-preemption/" title="内核抢占">内核抢占</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="临界区"><h3>临界区</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/kernel-preemption/" title="内核抢占">内核抢占</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="读写安全"><h3>读写安全</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/kernel-preemption/" title="内核抢占">内核抢占</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="per-CPU"><h3>per-CPU</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/per-cpu/" title="per-CPU变量">per-CPU变量</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="定时测量"><h3>定时测量</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/timing-measurement/" title="定时测量">定时测量</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="原子操作"><h3>原子操作</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/atomic-operations/" title="原子操作">原子操作</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="时钟"><h3>时钟</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/time-system/" title="时钟和定时器电路">时钟和定时器电路</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="定时器电路"><h3>定时器电路</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/time-system/" title="时钟和定时器电路">时钟和定时器电路</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="RTC"><h3>RTC</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/time-system/" title="时钟和定时器电路">时钟和定时器电路</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="TSC"><h3>TSC</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/time-system/" title="时钟和定时器电路">时钟和定时器电路</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="PIT"><h3>PIT</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/time-system/" title="时钟和定时器电路">时钟和定时器电路</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="ACPI"><h3>ACPI</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/time-system/" title="时钟和定时器电路">时钟和定时器电路</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内存屏障"><h3>内存屏障</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-barrier/" title="优化和内存屏障">优化和内存屏障</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="计时"><h3>计时</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/timing-in-linux/" title="Linux计时体系结构">Linux计时体系结构</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="伙伴系统"><h3>伙伴系统</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/buddy-system-struct/" title="伙伴系统的结构">伙伴系统的结构</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-fragmentation/" title="内存碎片">内存碎片</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/init-mm-zone-and-page/" title="初始化内存域和结点">初始化内存域和结点</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/alloc-page/" title="分配页">分配页</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/mm-release/" title="释放页">释放页</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="反碎片"><h3>反碎片</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-fragmentation/" title="内存碎片">内存碎片</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内存碎片"><h3>内存碎片</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-fragmentation/" title="内存碎片">内存碎片</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="自旋锁"><h3>自旋锁</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/spin-lock/" title="自旋锁">自旋锁</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/read-and-write-spin-lock/" title="读/写自旋锁">读/写自旋锁</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="spin_lock"><h3>spin_lock</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/spin-lock/" title="自旋锁">自旋锁</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内存空间"><h3>内存空间</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/init-mm-zone-and-page/" title="初始化内存域和结点">初始化内存域和结点</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="结点"><h3>结点</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/init-mm-zone-and-page/" title="初始化内存域和结点">初始化内存域和结点</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="IRQ"><h3>IRQ</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/irq-and-interrupt/" title="IRQ和中断">IRQ和中断</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/io-interrupt-dynamic/" title="动态分配IRQ线">动态分配IRQ线</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="APIC"><h3>APIC</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/irq-and-interrupt/" title="IRQ和中断">IRQ和中断</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="PIC"><h3>PIC</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/irq-and-interrupt/" title="IRQ和中断">IRQ和中断</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/io-interrupt-and-data-struct/" title="I/O中断处理">I/O中断处理</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="分配页"><h3>分配页</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/alloc-page/" title="分配页">分配页</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="IDT"><h3>IDT</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/interrupt-descriptor-table/" title="中断描述符表">中断描述符表</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="中断描述符表"><h3>中断描述符表</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/interrupt-descriptor-table/" title="中断描述符表">中断描述符表</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="顺序锁"><h3>顺序锁</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/seqlock/" title="顺序锁">顺序锁</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="嵌套执行"><h3>嵌套执行</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/loop-interrupt/" title="处理程序的嵌套执行">处理程序的嵌套执行</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="释放页"><h3>释放页</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/mm-release/" title="释放页">释放页</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="RCU"><h3>RCU</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/read-copy-update/" title="读-拷贝-更新">读-拷贝-更新</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="读-拷贝-更新"><h3>读-拷贝-更新</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/read-copy-update/" title="读-拷贝-更新">读-拷贝-更新</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="内核信号量"><h3>内核信号量</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/kernel-semaphore/" title="内核信号量">内核信号量</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="不连续页"><h3>不连续页</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/vmalloc/" title="不连续页的分配">不连续页的分配</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="中断处理"><h3>中断处理</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/working-on-interrupt/" title="中断处理">中断处理</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/io-interrupt-and-data-struct/" title="I/O中断处理">I/O中断处理</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/multi-cpu-interrupt/" title="处理器间中断处理">处理器间中断处理</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="动态分配"><h3>动态分配</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/io-interrupt-dynamic/" title="动态分配IRQ线">动态分配IRQ线</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="slab"><h3>slab</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab/" title="slab分配器">slab分配器</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/how-slab-work/" title="slab分配的原理">slab分配的原理</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab-structure/" title="slab数据结构">slab数据结构</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/init-slab/" title="slab初始化">slab初始化</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/create-slab/" title="slab创建">slab创建</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab-alloc/" title="slab分配">slab分配</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab-free/" title="slab释放">slab释放</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="分配器"><h3>分配器</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab/" title="slab分配器">slab分配器</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/how-slab-work/" title="slab分配的原理">slab分配的原理</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="备选分配器"><h3>备选分配器</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab/" title="slab分配器">slab分配器</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="软中断"><h3>软中断</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/soft-irq-and-tasklet/" title="软中断和tasklet">软中断和tasklet</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/soft-irq/" title="软中断">软中断</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/soft-irq-daemon-ksoftirqd/" title="软中断守护进程">软中断守护进程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="tasklet"><h3>tasklet</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/soft-irq-and-tasklet/" title="软中断和tasklet">软中断和tasklet</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/tasklet/" title="tasklet">tasklet</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="ksoftirqd"><h3>ksoftirqd</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/soft-irq-daemon-ksoftirqd/" title="软中断守护进程">软中断守护进程</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="完成量"><h3>完成量</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/completion/" title="完成量">完成量</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="文件系统"><h3>文件系统</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/virtual-filesystem/" title="虚拟文件系统">虚拟文件系统</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/special-filesystem/" title="特殊文件系统">特殊文件系统</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="VFS"><h3>VFS</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/virtual-filesystem/" title="虚拟文件系统">虚拟文件系统</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/vfs-system-interfaces/" title="VFS相关的系统调用">VFS相关的系统调用</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="文件模型"><h3>文件模型</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/common-file-model/" title="通用文件模型">通用文件模型</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="系统调用"><h3>系统调用</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/vfs-system-interfaces/" title="VFS相关的系统调用">VFS相关的系统调用</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="工作队列"><h3>工作队列</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/work-queue/" title="工作队列">工作队列</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="超级块"><h3>超级块</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/super-block-object/" title="超级块对象">超级块对象</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="inode"><h3>inode</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/inode-object/" title="索引节点对象">索引节点对象</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="索引节点"><h3>索引节点</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/inode-object/" title="索引节点对象">索引节点对象</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="释放"><h3>释放</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab-free/" title="slab释放">slab释放</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="目录项"><h3>目录项</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/dentry-object/" title="目录项对象">目录项对象</a>
+    </li>   
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/dentry-cache/" title="目录项高速缓存">目录项高速缓存</a>
+    </li>   
+    
+</ul>
+
+<div class="year" id="高速缓存"><h3>高速缓存</h3></div>
+<ul class="archive">
+    
+    <li class="item">
+        <a href="http://guojing.me/linux-kernel-architecture/posts/dentry-cache/" title="目录项高速缓存">目录项高速缓存</a>
+    </li>   
+    
+</ul>
+
+</div>
+</div>
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>
+

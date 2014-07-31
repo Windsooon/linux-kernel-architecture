@@ -1,0 +1,616 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>索引节点对象|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 索引节点对象..." name="description"/>
+  <meta content="inode,索引节点," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/inode-object/" />
+  <meta property="og:title" content="索引节点对象" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 索引节点对象..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">索引节点对象</div>
+
+  <div class="content virtual_filesystem虚拟文件系统_content_css">
+    <p>文件系统处理文件所需要的所有信息都放在一个名为索引节点的数据结构中，文件名可以随时更改，但是索引节点对文件是唯一的，并且随文件的存在而存在。内存中的索引节点对象由一个<em>inode</em>数据结构组成，代码如下：</p>
+
+<h4 id="includelinuxfsh">&lt;include/linux/fs.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">inode</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">hlist_node</span>   <span class="n">i_hash</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">i_list</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">i_sb_list</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">i_dentry</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">i_ino</span><span class="p">;</span>
+    <span class="n">atomic_t</span>            <span class="n">i_count</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">i_nlink</span><span class="p">;</span>
+    <span class="n">uid_t</span>               <span class="n">i_uid</span><span class="p">;</span>
+    <span class="n">gid_t</span>               <span class="n">i_gid</span><span class="p">;</span>
+    <span class="n">dev_t</span>               <span class="n">i_rdev</span><span class="p">;</span>
+    <span class="n">u64</span>                 <span class="n">i_version</span><span class="p">;</span>
+    <span class="n">loff_t</span>              <span class="n">i_size</span><span class="p">;</span>
+<span class="cp">#ifdef __NEED_I_SIZE_ORDERED
+</span>    <span class="n">seqcount_t</span>          <span class="n">i_size_seqcount</span><span class="p">;</span>
+<span class="cp">#endif
+</span>    <span class="k">struct</span> <span class="n">timespec</span>     <span class="n">i_atime</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">timespec</span>     <span class="n">i_mtime</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">timespec</span>     <span class="n">i_ctime</span><span class="p">;</span>
+    <span class="n">blkcnt_t</span>            <span class="n">i_blocks</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">i_blkbits</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">short</span>      <span class="n">i_bytes</span><span class="p">;</span>
+    <span class="n">umode_t</span>             <span class="n">i_mode</span><span class="p">;</span>
+    <span class="n">spinlock_t</span>          <span class="n">i_lock</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">mutex</span>        <span class="n">i_mutex</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">rw_semaphore</span> <span class="n">i_alloc_sem</span><span class="p">;</span>
+    <span class="k">const</span> <span class="k">struct</span> <span class="n">inode_operations</span>   <span class="o">*</span><span class="n">i_op</span><span class="p">;</span>
+    <span class="k">const</span> <span class="k">struct</span> <span class="n">file_operations</span>    <span class="o">*</span><span class="n">i_fop</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">super_block</span>      <span class="o">*</span><span class="n">i_sb</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">file_lock</span>        <span class="o">*</span><span class="n">i_flock</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">address_space</span>    <span class="o">*</span><span class="n">i_mapping</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">address_space</span>    <span class="n">i_data</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_QUOTA
+</span>    <span class="k">struct</span> <span class="n">dquot</span>            <span class="o">*</span><span class="n">i_dquot</span><span class="p">[</span><span class="n">MAXQUOTAS</span><span class="p">];</span>
+<span class="cp">#endif
+</span>    <span class="k">struct</span> <span class="n">list_head</span>        <span class="n">i_devices</span><span class="p">;</span>
+    <span class="k">union</span> <span class="p">{</span>
+        <span class="k">struct</span> <span class="n">pipe_inode_info</span>  <span class="o">*</span><span class="n">i_pipe</span><span class="p">;</span>
+        <span class="k">struct</span> <span class="n">block_device</span>     <span class="o">*</span><span class="n">i_bdev</span><span class="p">;</span>
+        <span class="k">struct</span> <span class="n">cdev</span>             <span class="o">*</span><span class="n">i_cdev</span><span class="p">;</span>
+    <span class="p">};</span>
+
+    <span class="n">__u32</span>           <span class="n">i_generation</span><span class="p">;</span>
+
+<span class="cp">#ifdef CONFIG_FSNOTIFY
+</span>    <span class="n">__u32</span>               <span class="n">i_fsnotify_mask</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">hlist_head</span>   <span class="n">i_fsnotify_mark_entries</span><span class="p">;</span>
+<span class="cp">#endif
+</span>
+<span class="cp">#ifdef CONFIG_INOTIFY
+</span>    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">inotify_watches</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">mutex</span>        <span class="n">inotify_mutex</span><span class="p">;</span>
+<span class="cp">#endif
+</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">i_state</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">dirtied_when</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">i_flags</span><span class="p">;</span>
+    <span class="n">atomic_t</span>            <span class="n">i_writecount</span><span class="p">;</span>
+
+<span class="cp">#ifdef CONFIG_SECURITY
+</span>    <span class="kt">void</span>                <span class="o">*</span><span class="n">i_security</span><span class="p">;</span>
+<span class="cp">#endif
+#ifdef CONFIG_FS_POSIX_ACL
+</span>    <span class="k">struct</span> <span class="n">posix_acl</span>    <span class="o">*</span><span class="n">i_acl</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">posix_acl</span>    <span class="o">*</span><span class="n">i_default_acl</span><span class="p">;</span>
+<span class="cp">#endif
+</span>    <span class="kt">void</span>                <span class="o">*</span><span class="n">i_private</span><span class="p">;</span>
+<span class="p">};</span></code></pre></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>i_hash</td>
+      <td>用于散列链表的指针</td>
+    </tr>
+    <tr>
+      <td>i_list</td>
+      <td>用于描述索引节点当前状态的链表指针</td>
+    </tr>
+    <tr>
+      <td>i_sb_list</td>
+      <td>用于超级块的索引节点链表的指针</td>
+    </tr>
+    <tr>
+      <td>i_dentry</td>
+      <td>引用索引节点的目录项对象链表的头</td>
+    </tr>
+    <tr>
+      <td>i_ino</td>
+      <td>索引节点号</td>
+    </tr>
+    <tr>
+      <td>i_count</td>
+      <td>引用计数器</td>
+    </tr>
+    <tr>
+      <td>i_mode</td>
+      <td>文件类型与访问权限</td>
+    </tr>
+    <tr>
+      <td>i_nlink</td>
+      <td>硬链接数目</td>
+    </tr>
+    <tr>
+      <td>i_uid</td>
+      <td>所有者标识符</td>
+    </tr>
+    <tr>
+      <td>i_gid</td>
+      <td>组标识符</td>
+    </tr>
+    <tr>
+      <td>i_rdev</td>
+      <td>实设备标识符</td>
+    </tr>
+    <tr>
+      <td>i_size</td>
+      <td>文件的字节数</td>
+    </tr>
+    <tr>
+      <td>i_attime</td>
+      <td>上次访问文件的时间</td>
+    </tr>
+    <tr>
+      <td>i_mtime</td>
+      <td>上次写文件的时间</td>
+    </tr>
+    <tr>
+      <td>i_ctime</td>
+      <td>上次修改索引节点的时间</td>
+    </tr>
+    <tr>
+      <td>i_blkbits</td>
+      <td>块的位数</td>
+    </tr>
+    <tr>
+      <td>i_blksize</td>
+      <td>块的字节数</td>
+    </tr>
+    <tr>
+      <td>i_version</td>
+      <td>版本号，每次使用之后自动递增</td>
+    </tr>
+    <tr>
+      <td>i_blocks</td>
+      <td>文件的块数</td>
+    </tr>
+    <tr>
+      <td>i_bytes</td>
+      <td>文件中最后一个块的字节数</td>
+    </tr>
+    <tr>
+      <td>i_sock</td>
+      <td>如果文件时一个套接字则为非0</td>
+    </tr>
+    <tr>
+      <td>i_lock</td>
+      <td>保护索引节点一些字段的自旋锁</td>
+    </tr>
+    <tr>
+      <td>i_sem</td>
+      <td>索引节点的信号量</td>
+    </tr>
+    <tr>
+      <td>i_alloc_sem</td>
+      <td>在直接I/O文件操作系统中避免出现竞争条件的读/写信号量</td>
+    </tr>
+    <tr>
+      <td>i_op</td>
+      <td>索引节点的操作</td>
+    </tr>
+    <tr>
+      <td>i_fop</td>
+      <td>缺省文件操作</td>
+    </tr>
+    <tr>
+      <td>i_sb</td>
+      <td>指向超级块对象的指针</td>
+    </tr>
+    <tr>
+      <td>i_flock</td>
+      <td>指向文件锁链表的指针</td>
+    </tr>
+    <tr>
+      <td>i_mapping</td>
+      <td>指向<em>address_space</em>对象的指针</td>
+    </tr>
+    <tr>
+      <td>i_data</td>
+      <td>文件的<em>address_space</em>对象</td>
+    </tr>
+    <tr>
+      <td>i_dquot</td>
+      <td>索引节点的磁盘限额</td>
+    </tr>
+    <tr>
+      <td>i_devices</td>
+      <td>用于具体的字符或块设备索引节点链表的指针</td>
+    </tr>
+    <tr>
+      <td>i_pipe</td>
+      <td>如果文件时一个管道则使用它</td>
+    </tr>
+    <tr>
+      <td>i_bdev</td>
+      <td>指向块设备驱动程序的指针</td>
+    </tr>
+    <tr>
+      <td>i_cdev</td>
+      <td>指向字符设备驱动程序的指针</td>
+    </tr>
+    <tr>
+      <td>i_cindex</td>
+      <td>拥有一组次设备好的设备文件的索引</td>
+    </tr>
+    <tr>
+      <td>i_generation</td>
+      <td>索引节点版本号</td>
+    </tr>
+    <tr>
+      <td>i_dnotify_mask</td>
+      <td>目录通知事件的位掩码</td>
+    </tr>
+    <tr>
+      <td>i_dnotify</td>
+      <td>用于目录通知</td>
+    </tr>
+    <tr>
+      <td>i_state</td>
+      <td>索引节点的状态标志</td>
+    </tr>
+    <tr>
+      <td>dirtied_when</td>
+      <td>索引节点的弄脏的时间</td>
+    </tr>
+    <tr>
+      <td>i_flags</td>
+      <td>文件系统的安装标志</td>
+    </tr>
+    <tr>
+      <td>i_writecount</td>
+      <td>用于写进程的引用计数器</td>
+    </tr>
+    <tr>
+      <td>i_security</td>
+      <td>指向索引节点安全结构的指针</td>
+    </tr>
+    <tr>
+      <td>i_size_seqcount</td>
+      <td>SMP系统为<em>i_size</em>字段获取一致值时使用的顺序计数器</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>每个索引节点（<em>inode</em>）对象都会复制磁盘索引节点包含的一些数据，比如分配给文件的磁盘块数。如果<em>i_state</em>字段的值等于<em>I_DIRTY_SYNC</em>、<em>I_DIRTY_DATASYNC</em>或<em>I_DIRTY_PAGES</em>，该索引节点就是『脏』的，也就是说，对应的磁盘索引节点必须被更新。</p>
+
+<p><em>I_DIRTY</em>宏可以用来立即检查这三个标志的值：</p>
+
+<h4 id="includelinuxfsh-1">&lt;include/linux/fs.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define I_DIRTY (
+</span>    <span class="n">I_DIRTY_SYNC</span> <span class="o">|</span>
+    <span class="n">I_DIRTY_DATASYNC</span> <span class="o">|</span>
+    <span class="n">I_DIRTY_PAGES</span><span class="p">)</span></code></pre></div>
+
+<p><em>i_state</em>字段的其他值有<em>I_LOCK</em>、<em>I_FREEING</em>、<em>I_CLEAR</em>以及<em>I_NEW</em>。其中<em>I_LOCK</em>表示
+涉及的索引节点对象处于I/O传送中，而<em>I_FREEING</em>表示索引节点对象正在被释放，<em>I_CLEAR</em>表示索引节点对象的内容不再有意义，<em>I_NEW</em>表示索引节点对象已经分配但还没有从磁盘索引节点读取来的数据填充。</p>
+
+<p>每个索引节点对象总是出现在下列双向循环链表的某个链表中：</p>
+
+<ol>
+  <li>有效未使用的索引节点链表，典型的如哪些镜像有效的磁盘索引节点，且当前未被任何进程使用。这些索引节点不为脏，且它们的<em>i_count</em>字段设置为0。链表中的首元素和尾元素时由变量<em>inode_unused</em>的<em>next</em>字段和<em>prev</em>字段分别指向的。这个链表用作磁盘高速缓存。</li>
+  <li>正在使用的索引节点链表，也就是那些镜像有效的磁盘索引节点，且当前被某些进程使用，这些索引节点不为脏，但它们的<em>i_count</em>字段为正数，链表中的首元素和尾元素由变量<em>inode_in_use</em>引用。</li>
+  <li>脏索引节点的链表。链表中的首元素和尾元素是由相应超级块对象的<em>s_dirty</em>字段引用的。</li>
+</ol>
+
+<p>这些链表都是通过适当的索引节点对象的<em>i_list</em>字段链接在一起的。</p>
+
+<p>此外，每个索引节点对象也包含在每文件系统（<em>per-filesystem</em>）的双向循环连表中，链表的头存放在超级块对象的<em>s_inodes</em>字段中，索引节点对象的<em>i_sb_list</em>字段存放了指向链表相邻元素的指针。</p>
+
+<p>最后，索引节点对象也存放一个称为<em>inode_hashtable</em>的散列表中，散列表加快了对索引节点对象的搜索，前提是系统内核要知道索引节点号及文件所在文件系统对应的超级块对象的地址。</p>
+
+<p>由于散列技术可能引发冲突，所以索引节点对象包含一个<em>i_hash</em>字段，该字段中包含向前和向后的两个指针，分别指向散列到统一地址和前一个索引节点和后一个索引节点，该字段因此创建了由这些索引节点组成的一个双向链表。</p>
+
+<p>与索引节点对象关联的方法也叫索引节点操作，它们由<em>inode_operation</em>结构来描述，该结构的地址存放在<em>i_op</em>字段中。<em>inode_operation</em>结构代码如下：</p>
+
+<h4 id="includelinuxfsh-2">&lt;include/linux/fs.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">inode_operations</span> <span class="p">{</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">create</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span>
+                   <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span><span class="kt">int</span><span class="p">,</span>
+                   <span class="k">struct</span> <span class="n">nameidata</span> <span class="o">*</span><span class="p">);</span>
+    <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span> <span class="p">(</span><span class="o">*</span><span class="n">lookup</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span>
+                               <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span>
+                               <span class="k">struct</span> <span class="n">nameidata</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">link</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">unlink</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">symlink</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">mkdir</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span><span class="kt">int</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">rmdir</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">mknod</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span><span class="kt">int</span><span class="p">,</span><span class="n">dev_t</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">rename</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span>
+            <span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">readlink</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="kt">char</span> <span class="n">__user</span> <span class="o">*</span><span class="p">,</span><span class="kt">int</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="o">*</span> <span class="p">(</span><span class="o">*</span><span class="n">follow_link</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">nameidata</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">put_link</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">nameidata</span> <span class="o">*</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">truncate</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">permission</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">check_acl</span><span class="p">)(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">setattr</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">iattr</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">getattr</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">vfsmount</span> <span class="o">*</span><span class="n">mnt</span><span class="p">,</span> <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">kstat</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">setxattr</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="p">,</span><span class="k">const</span> <span class="kt">void</span> <span class="o">*</span><span class="p">,</span><span class="kt">size_t</span><span class="p">,</span><span class="kt">int</span><span class="p">);</span>
+    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">getxattr</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="p">,</span> <span class="kt">size_t</span><span class="p">);</span>
+    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">listxattr</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="kt">char</span> <span class="o">*</span><span class="p">,</span> <span class="kt">size_t</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">removexattr</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">truncate_range</span><span class="p">)(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span> <span class="n">loff_t</span><span class="p">,</span> <span class="n">loff_t</span><span class="p">);</span>
+    <span class="kt">long</span> <span class="p">(</span><span class="o">*</span><span class="n">fallocate</span><span class="p">)(</span>
+        <span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="n">inode</span><span class="p">,</span> <span class="kt">int</span> <span class="n">mode</span><span class="p">,</span> <span class="n">loff_t</span> <span class="n">offset</span><span class="p">,</span>
+        <span class="n">loff_t</span> <span class="n">len</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">fiemap</span><span class="p">)(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span>
+        <span class="k">struct</span> <span class="n">fiemap_extent_info</span> <span class="o">*</span><span class="p">,</span> <span class="n">u64</span> <span class="n">start</span><span class="p">,</span>
+        <span class="n">u64</span> <span class="n">len</span><span class="p">);</span>
+<span class="p">};</span></code></pre></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>函数名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>create(dir, dentry, mode, nameidata)</td>
+      <td>在某一目录下，为与目录项对象相关的普通文件创建一个新的磁盘索引节点</td>
+    </tr>
+    <tr>
+      <td>lookup(dir, dentry, nameidata)</td>
+      <td>包含在一个目录项对象中的文件名对应的索引节点查找目录</td>
+    </tr>
+    <tr>
+      <td>link(old_dentry, dir, new_dentry)</td>
+      <td>创建一个新的硬链接，它指向<em>dir</em>目录下名为<em>Old_dentry</em>的文件</td>
+    </tr>
+    <tr>
+      <td>unlink(dir, dentry)</td>
+      <td>从一个目录中删除目录项对象所指定文件的硬链接</td>
+    </tr>
+    <tr>
+      <td>symlink(dir, dentry, symname)</td>
+      <td>在某个目录下，为与目录项对象相关的符号链接创建一个新的索引节点</td>
+    </tr>
+    <tr>
+      <td>mkdir(dir, dentry, mode)</td>
+      <td>在某个目录下，为与目录项对象相关的目录创建一个新的索引节点</td>
+    </tr>
+    <tr>
+      <td>rmdir(dir, dentry)</td>
+      <td>从一个目录删除子目录，子目录的名称包含在目录项对象中</td>
+    </tr>
+    <tr>
+      <td>mknod(dir, dentry, mode, rdev)</td>
+      <td>在某个目录中，为与目录项对象相关的特定文件创建一个新的磁盘索引节点，其中<em>mode</em>和<em>rdev</em>分别表示文件的类型和设备的主次设备号</td>
+    </tr>
+    <tr>
+      <td>rename(old_dir, old_dentry, new_dir, new_dentry)</td>
+      <td>将<em>old_dir</em>目录下由<em>old_entry</em>标识的文件移到<em>new_dir</em>目录下，新文件名包含在<em>new_dentry</em>指向的目录项对象中</td>
+    </tr>
+    <tr>
+      <td>readlink(dentry, buffer, buflen)</td>
+      <td>将目录项所知道的符号链接中对应的文件路径名拷贝到<em>buffer</em>所指定的用户态内存区</td>
+    </tr>
+    <tr>
+      <td>follow_link(inode, nameidata)</td>
+      <td>解析索引节点对象所指定的符号链接，如果该符号链接是一个相对路径名，则从第二个参数所指定的目录开始进行查找</td>
+    </tr>
+    <tr>
+      <td>put_link(dentry, nameidata)</td>
+      <td>释放由<em>follow_link</em>方法分配的用于解析符号链接的所有临时数据机构</td>
+    </tr>
+    <tr>
+      <td>truncate(inode)</td>
+      <td>修改与索引节点相关的文件长度</td>
+    </tr>
+    <tr>
+      <td>permission(inode, mask, nameidata)</td>
+      <td>检查是否允许对与索引节点所指的文件进行指定模式的访问</td>
+    </tr>
+    <tr>
+      <td>setattr(dentry, iattr)</td>
+      <td>在吃几索引节点属性后通知一个『修改事件』</td>
+    </tr>
+    <tr>
+      <td>getattr(mnt, dentry, kstat)</td>
+      <td>由一些文件系统用于读取索引节点属性</td>
+    </tr>
+    <tr>
+      <td>setxattr(dentry, name, value, size, flags)</td>
+      <td>为索引节点设置扩展属性<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup></td>
+    </tr>
+    <tr>
+      <td>getxattr(dentry, name, buffer, size)</td>
+      <td>获取索引节点的扩展属性</td>
+    </tr>
+    <tr>
+      <td>listxattr(dentry, buffer, size)</td>
+      <td>获取扩展属性名称的整个链表</td>
+    </tr>
+    <tr>
+      <td>removexattr(dentry, name)</td>
+      <td>删除索引节点的扩展属性</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>同<a href="/linux-kernel-architecture/posts/super-block-object/">超级块对象</a>一样，上面的所有方法对所有的文件类型都是可用的，不过只有其中一个子集应用到某一个特定的索引节点和文件系统，未实现的方法对应的字段被设置为NULL。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>扩展属性存放在任何索引节点之外的磁盘快中。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#inode">#inode</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#索引节点">#索引节点</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/super-block-object/" class="pre">&lt; 超级块对象</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab-free/" class="next">slab释放 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments virtual_filesystem虚拟文件系统_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章索引节点对象写于2014年05月14日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

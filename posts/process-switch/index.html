@@ -1,0 +1,352 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>进程切换|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 进程切换..." name="description"/>
+  <meta content="进程切换,硬件上下文,上下文切换,schedule,switch_to," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/process-switch/" />
+  <meta property="og:title" content="进程切换" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 进程切换..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">进程切换</div>
+
+  <div class="content process进程_content_css">
+    <p>一开始我并不想写这个笔记，因为太过复杂，我一直想以简单的方式理解内核，只从概念，避免涉及过多的代码。实际上，我写笔记的时候，书已经看到很后面了，因为总要理解更多才能理解之前看似简短实际复杂的内容。但最后发现实际上任何内容都没有办法跳过，即便不想看，也需要了解基本的概念，所以依旧不会拿大段代码，但总会拿少量代码。</p>
+
+<p>如果不感兴趣，我觉得也可以跳过，只需要知道一个概念即可。关于进程切换有更详细的章节。。所以这里也并没有深入更多，只是笔记，也许以后会补充更多内容。</p>
+
+<p>为了控制进程的执行，内核必须有能力挂起正在CPU上运行的进程，并恢复以前挂起的某个进程的执行。这种行为被称为进程切换（<em>process switch</em>）、任务切换（<em>task switch</em>）或上下文切换（<em>content switch</em>）。</p>
+
+<h3 id="section">硬件上下文</h3>
+
+<p>尽管每个进程都有自己的地址空间，但所有进程必须共享CPU寄存器。因此，在恢复一个进程的执行之前，内核必须确保每个寄存器装载了挂起进程时所需要的值。</p>
+
+<p>进程恢复执行前必须装入寄存器的一组数据成为硬件上下文（<em>hardware context</em>）。硬件上下文是进程可执行上下文的一个自己，因为可执行上下文包含进程执行时所需要的所有信息。在Linux中，进程硬件上下午的一部分存放在TSS段，而剩余部分存放在内核态堆栈中。</p>
+
+<p>在下面描述中，假定用<em>prev</em>局部变量表示切换出的进程描述符，<em>next</em>表示切换进的进程描述符。因此，我们把进程切换定义为这样的行为：保存<em>prev</em>硬件上下文，用<em>next</em>硬件上下文代替<em>prev</em>。因为进程切换经常发生，因此减少保存和装入硬件上下文所话费的时间是非常重要的。</p>
+
+<p>早期Linux版本利用80x86体系结构所需提供的硬件支持，并通过far jmp<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>指令跳到next进程TSS描述符的选择符来执行进程切换。当执行这条指令时，CPU通过自动保存原来的硬件上下文，装入新的硬件上下文来执行硬件上下文切换。但Linux2.6使用软件执行进程切换，原因有：</p>
+
+<ol>
+  <li>通过一组mov指令逐步执行切换，这样能较好地控制所装入的数据的合法性，一面被恶意用户伪造。far jmp指令不会有这样的检查。</li>
+  <li>旧方法和新方法所需时间大致相同。</li>
+</ol>
+
+<p>进程切换值发生在内核态，在执行进程切换之前，用户态进程使用的所有寄存器内容已保存在内核堆栈上，这也包括ss和esp这对寄存器的内容。</p>
+
+<h3 id="section-1">任务状态段</h3>
+
+<p>80x86体系结构包含了一个特殊的段类型，叫任务状态段（<em>Task State Segment，TSS</em>）来存放硬件上下文，尽管Linux并不使用硬件上下文切换，但是强制它为系统中每个不同的CPU创建一个TSS，这样做主要有两个理由：</p>
+
+<ol>
+  <li>当80x86的一个CPU从用户态切换到内核态时，它就从TSS中后去内核态堆栈的地址。</li>
+  <li>当用户态进程试图通过in或out指令访问一个I/O端口时，CPU需要访问存放在TSS中的I/O许可位图以检查该进程是否有访问端口的权利。</li>
+</ol>
+
+<p>更确切的说，当进程在用户态执行in或out指令时，控制单元执行下列操作：</p>
+
+<ol>
+  <li>检查eflags寄存器中的2位IOPL字段，如果字段的值为3，控制单元就执行I/O指令。否则，执行下一个检查。</li>
+  <li>访问tr寄存器以确定当前的TSS和相应的I/O许可权位图。</li>
+  <li>检查I/O指令中指定的I/O端口在I/O许可权位图中对应的位，如果该位清，这条指令就执行，否则控制单元产生一个异常。</li>
+</ol>
+
+<p><em>tss_struct</em>结构描述TSS的格式，<em>init_tss</em>数组为系统上每个不同的CPU存放一个TSS。在每次进程切换时，内核都更新TSS的某些字段以便相应的CPU控制单元可以安全地检索到它需要的信息。因此，TSS反映了CPU上当前进程的特权级，但不必为没有在运行的进程保留TSS。</p>
+
+<p>每个TSS有它自己8字节的任务状态段描述符（<em>Task State Segment Descriptor，TSSD</em>）。这个描述符包括指向TSS起始地址的32位<em>Base</em>字段，20位<em>Limit</em>字段。TSSD的S标志位被清0，以表示相应的TSS时系统段的事实。</p>
+
+<p><em>Type</em>字段被置位11或9以表示这个段实际上是一个TSS。在Intel的原始设计中，系统中的每个进程都应当指向自己的TSS；<em>Type</em>字段的第二个有效位叫<em>Busy</em>位；如果进程正由CPU执行，则该位置1，否则为0。在Linux的设计中，每个CPU只有一个TSS，因此<em>Busy</em>位总是为1.</p>
+
+<p>由Linux创建的TSSD存放在全局描述符表（<em>GDT</em>）中，GDT的基地址存放在每个CPU的<em>gdtr</em>寄存器中。每个CPU的<em>tr</em>寄存器包含相应TSS的TSSD选择符，也包含了两个隐藏的非编程字段：TSSD的<em>Base</em>字段和<em>Limit</em>字段。这样，处理器就能够直接TSS寻址而不需要从GDT中检索TSS地址。</p>
+
+<h3 id="thread">thread字段</h3>
+
+<p>在每次进程切换时，被替换的进程的硬件上下文必须保存在别处。不能像Intel原始设计那样保存在TSS中，因为Linux为每个处理器而不是为每个进程使用TSS。</p>
+
+<p>因此，每个进程描述符包含一个类型为<em>thread_struct</em>的<em>thread</em>字段，只要进程被切换出去，内核就把其硬件上下文保存在这个结构中。随后可以看到，这个数据结构包含的字段涉及大部分CPU寄存器，但不包括eax、ebx等等这些通用寄存器。它们的值保留在内核堆栈中。</p>
+
+<h3 id="section-2">执行进程切换</h3>
+
+<p>进程切换可能只发生在精心定义的点：schedule()函数，这个函数很长，会在以后更长的篇幅里讲解。。这里，只关注内核如何执行一个进程切换。</p>
+
+<p>进程切换由两步组成：</p>
+
+<ol>
+  <li>切换页全局目录以安装一个新的地址空间。</li>
+  <li>切换内核态堆栈和硬件上下文，因为硬件上下文提供了内核执行新进程所需要的所有信息，包含CPU寄存器。</li>
+</ol>
+
+<h3 id="switchto">switch_to宏</h3>
+
+<p>进程切换的第二步由<em>switch_to</em>宏执行。它是内核中与硬件关系最为密切的例程之一，必须下很多功夫了解。</p>
+
+<h4 id="includeasm-genericsystemh">&lt;include/asm-generic/system.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cm">/* context switching is now performed out-of-line in switch_to.S */</span>
+<span class="k">extern</span> <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="n">__switch_to</span><span class="p">(</span><span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="p">,</span>
+        <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="p">);</span>
+<span class="cp">#define switch_to(prev, next, last)\
+    do {\
+        ((last) = __switch_to((prev), (next)));\
+    } while (0)</span></code></pre></div>
+
+<p>首先，该宏有三个参数，<em>prev</em>、<em>next</em>和<em>last</em>，<em>prev</em>和<em>next</em>的作用仅是局部变量<em>prev</em>和<em>next</em>的占位符，即它们是输入参数，分别表示被替换进程和新进程描述符的地址在内存中的位置。</p>
+
+<p>在任何进程切换中，涉及到的是三个进程而不是两个。假设内核决定暂停进程A而激活进程B，在schedule()函数中，<em>prev</em>指向A的描述符，而<em>next</em>指向B的进程描述符。<em>switch_to</em>宏一旦使A暂停，A的执行流就被冻结。</p>
+
+<p>随后，当内核想再次激活A，就必须暂停另一个进程C，因为这通常不是B，因为B有可能被其他进程比如C切换。于是就要用<em>prev</em>指向C而<em>next</em>指向A来执行另一个switch_to宏。当A恢复它执行的流时，就会找到它原来的内核栈，于是<em>prev</em>局部变量还是指向A的描述符而<em>next</em>指向B的描述符。此时，代表进程A执行的内核就失去了对C的任何引用。但引用对于完成进程切换是有用的，所以需要保留。</p>
+
+<p>switch_to宏的最后一个参数是输出参数，它表示宏把进程C的描述符地址写在内存的什么位置了，不过，这个是在恢复A执行之后完成的。在进程切换之前，宏把第一个输入参数<em>prev</em>表示的变量存入CPU的eax寄存器。在完成进程切换，A已经恢复执行时，宏把CPU的eax寄存器的内容写入由第三个参数<em>last</em>所指示的A在内存中的位置。因为CPU寄存器不会在切换点发生变化，<strong>所以C的描述符地址也存在内存的这个位置</strong>。在schedule()执行过程中，last参数指向A的局部变量<em>prev</em>，所以<em>prev</em>被C的地址覆盖。</p>
+
+<h3 id="switchto-1">__switch_to()函数</h3>
+
+<p>__switch_to()函数执行大多数开始于switch_to()宏的进程切换。这个函数作用于<em>prev_p</em>和<em>next_p</em>参数，这两个参数表示前一个进程和新进程。这个函数的调用不同于一般的函数调用。因为__switch_to()从eax和edx取参数<em>prev_p</em>和<em>next_p</em>，而不像大多数函数一样从栈中取参数。</p>
+
+<h4 id="archx86kernelprocess32c">&lt;arch/x86/kernel/process_32.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="n">__switch_to</span><span class="p">(</span>
+    <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="n">prev_p</span><span class="p">,</span>
+    <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="n">next_p</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">thread_struct</span> <span class="o">*</span><span class="n">prev</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">prev_p</span><span class="o">-&gt;</span><span class="kr">thread</span><span class="p">,</span>
+                 <span class="o">*</span><span class="n">next</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">next_p</span><span class="o">-&gt;</span><span class="kr">thread</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">cpu</span> <span class="o">=</span> <span class="n">smp_processor_id</span><span class="p">();</span>
+    <span class="k">struct</span> <span class="n">tss_struct</span> <span class="o">*</span><span class="n">tss</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">per_cpu</span><span class="p">(</span><span class="n">init_tss</span><span class="p">,</span> <span class="n">cpu</span><span class="p">);</span>
+    <span class="n">bool</span> <span class="n">preload_fpu</span><span class="p">;</span>
+
+    <span class="n">preload_fpu</span> <span class="o">=</span> <span class="n">tsk_used_math</span><span class="p">(</span><span class="n">next_p</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">next_p</span><span class="o">-&gt;</span><span class="n">fpu_counter</span> <span class="o">&gt;</span> <span class="mi">5</span><span class="p">;</span>
+
+    <span class="n">__unlazy_fpu</span><span class="p">(</span><span class="n">prev_p</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">preload_fpu</span><span class="p">)</span>
+        <span class="n">prefetch</span><span class="p">(</span><span class="n">next</span><span class="o">-&gt;</span><span class="n">xstate</span><span class="p">);</span>
+
+    <span class="n">load_sp0</span><span class="p">(</span><span class="n">tss</span><span class="p">,</span> <span class="n">next</span><span class="p">);</span>
+
+    <span class="n">lazy_save_gs</span><span class="p">(</span><span class="n">prev</span><span class="o">-&gt;</span><span class="n">gs</span><span class="p">);</span>
+
+    <span class="n">load_TLS</span><span class="p">(</span><span class="n">next</span><span class="p">,</span> <span class="n">cpu</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">get_kernel_rpl</span><span class="p">()</span> <span class="o">&amp;&amp;</span> <span class="n">unlikely</span><span class="p">(</span><span class="n">prev</span><span class="o">-&gt;</span><span class="n">iopl</span> <span class="o">!=</span> <span class="n">next</span><span class="o">-&gt;</span><span class="n">iopl</span><span class="p">))</span>
+        <span class="n">set_iopl_mask</span><span class="p">(</span><span class="n">next</span><span class="o">-&gt;</span><span class="n">iopl</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">task_thread_info</span><span class="p">(</span><span class="n">prev_p</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">flags</span> 
+        <span class="o">&amp;</span> <span class="n">_TIF_WORK_CTXSW_PREV</span>
+        <span class="o">||</span> <span class="n">task_thread_info</span><span class="p">(</span><span class="n">next_p</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">flags</span>
+        <span class="o">&amp;</span> <span class="n">_TIF_WORK_CTXSW_NEXT</span><span class="p">))</span>
+        <span class="n">__switch_to_xtra</span><span class="p">(</span><span class="n">prev_p</span><span class="p">,</span> <span class="n">next_p</span><span class="p">,</span> <span class="n">tss</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">preload_fpu</span><span class="p">)</span>
+        <span class="n">clts</span><span class="p">();</span>
+
+    <span class="n">arch_end_context_switch</span><span class="p">(</span><span class="n">next_p</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">preload_fpu</span><span class="p">)</span>
+        <span class="n">__math_state_restore</span><span class="p">();</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">prev</span><span class="o">-&gt;</span><span class="n">gs</span> <span class="o">|</span> <span class="n">next</span><span class="o">-&gt;</span><span class="n">gs</span><span class="p">)</span>
+        <span class="n">lazy_load_gs</span><span class="p">(</span><span class="n">next</span><span class="o">-&gt;</span><span class="n">gs</span><span class="p">);</span>
+
+    <span class="n">percpu_write</span><span class="p">(</span><span class="n">current_task</span><span class="p">,</span> <span class="n">next_p</span><span class="p">);</span>
+
+    <span class="k">return</span> <span class="n">prev_p</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>这个函数执行步骤如下：</p>
+
+<p>执行由<em>__unlay_fpu()</em>宏代码产生的代码，以有选择地保存<em>prev_p</em>进程的FPU、MMX以及XMM寄存器的内容。</p>
+
+<p>执行<em>smp_processor_id()</em>宏获得本地CPU的下表，即执行代码的CPU。该宏从当前进程的<em>thread_info</em>结构的cpu字段获得下标并保存到cpu局部变量。</p>
+
+<p>把<em>next_p-&gt;thread.esp0</em>装入对应于本地CPU的TSS的esp0字段。其实，任何由sysenter汇编指令产生的从用户态到内核态的特权级转换将把这个地址拷贝到esp寄存器中。</p>
+
+<p>把<em>next_p</em>进程使用的线程局部存储（<em>TLS</em>）段装载入本地CPU的全局描述符表。</p>
+
+<p>把<em>fs</em>和<em>gs</em>段寄存器的内容分别存放在<em>prev_p-&gt;thread.fs</em>和<em>prev_p-&gt;thread.gs</em>中。esi寄存器指向<em>prev_p-&gt;thread</em>结构。</p>
+
+<p>如果<em>fs</em>或<em>gs</em>段寄存器已经被<em>prev_p</em>或<em>next_p</em>进程中的任意一个使用，则将<em>next_p</em>进程的<em>thread_struct</em>描述符中保存的值装入这些寄存器。</p>
+
+<p>用<em>next_p-&gt;thread.debugreg</em>数组内容装载dr0…dr7中的6个调试寄存器。只有在<em>next_p</em>被挂起时正在使用调试寄存器，这种操作才能进行。</p>
+
+<p>如果必要，则更新TSS中的I/O位图。然后终止，<em>prev_p</em>参数被拷贝到eax，因为缺省情况下任何C函数的返回值被传给eax寄存器。所以eax的值在调用<em>__switch_to()</em>的过程中被保护起来；这很重要，因为调用该函数时会假定<em>eax</em>总是用来存放将被替换的进程描述符地址。</p>
+
+<p>汇编语言指令<em>ret</em>把栈定保存的返回地址装入<em>eip</em>程序计数器。不过，<em>__swtich_to()</em>函数时通过简单的跳转被调用的。因此，ret汇编指令在栈中找到标号为1的指令地址，其中标号为1的地址是由<em>switch_to()</em>宏推入堆栈的。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>far jmp指令既修改cs寄存器，也修改eip寄存器，而简单的jmp之类值修改eip寄存器。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#进程切换">#进程切换</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#硬件上下文">#硬件上下文</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#上下文切换">#上下文切换</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#schedule">#schedule</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#switch_to">#switch_to</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/group-exit-and-do-exit-a-process/" class="pre">&lt; 进程退出</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-address/" class="next">内存地址 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments process进程_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章进程切换写于2014年04月12日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

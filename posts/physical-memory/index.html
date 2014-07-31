@@ -1,0 +1,224 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>物理内存布局|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 物理内存布局..." name="description"/>
+  <meta content="内存,物理内存,物理内存布局," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/physical-memory/" />
+  <meta property="og:title" content="物理内存布局" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 物理内存布局..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">物理内存布局</div>
+
+  <div class="content mm内存寻址_content_css">
+    <p>在系统初始化阶段，内核必须建立一个物理地址映射来指定哪些物理地址范围对内核可用，哪些对内核不可用，因为会有一些物理内存被用作特殊的目的，例如BIOS的一些数据会包含在前1M的物理内存中。</p>
+
+<p>内核将下列页框记为保留：</p>
+
+<ol>
+  <li>在不可用的物理地址范围内的页框。</li>
+  <li>含有内核代码和已初始化的数据结构的页框。</li>
+</ol>
+
+<p>保留页框中的页框绝对不能被动态分配或交换到磁盘上。</p>
+
+<p>一般来说，Linux内核安装在RAM中的从物理地址0x00100000开始的地方，就是从第二个MB开始，所需页框总数依赖于内核的配置方案，景点的配置所得到的内核可以被安装在小于3MB的RAM中。</p>
+
+<p>之所以内核没有被安装在物理内存最开始的地方，是因为PC体系结构有几个特殊的地方必须考虑到，例如，页框0由BIOS使用，存放加电自检（<em>Power-On Self-Test，POST</em>）期间检查到的系统硬件配置。因此，很多笔记本电脑的BIOS在系统初始化后还将数据写回该页框。</p>
+
+<p>物理地址从0x000a0000到0x000fffff的范围通常刘改BIOS例程，并且映射ISA图形卡上的内部内存。这个区域是所有IBM兼容PC上从640KB到1MB之间著名的洞<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。第一个MB内的其他页框可能由特定计算机模型保留。</p>
+
+<p>在启动过程的早期阶段，内核询问BIOS并了解物理内存的大小，通常，内核页调用BIOS过程建立一组物理地址范围和其对应的内存类型。随后，内核执行<em>machine_specific_memory_setup()</em>函数，该函数建立物理地址映射，如果这张表是可获取的，那是内核在BIOS列表的基础上构建的，否则，内核保守的设置这张表为默认值<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>。</p>
+
+<p>内核可能不会见到BIOS报告的所有物理内存，如果没有使用PAE机制，则最高寻址4GB大小的RAM。<em>setup_memory()</em>函数在<em>machine_specific_memory_setup()</em>函数之后被调用，它分析物理内存区域表示并初始化一些变量来描述内核物理内存布局。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/page_frame.png" alt="system" style="max-width:700px" /></p>
+
+<p class="center">物理内存的布局</p>
+
+<p>为了避免把内核装入一组不连续的页框里，Linux更愿意跳过RAM的第一个MB，明确地说，Linux用PC体系结构未保留的页框来动态存放所分配的页。</p>
+
+<p>符号_text对应于物理地址0x00100000，来表示内核代码第一个字节的地址。内核代码的结束位置由另外一个类似的符号_etext。内核数据分为两组，初始化过的数据的和没有初始化的数据。初始化过的数据在_etext后开始，在_edata处结束。紧接着是未初始化的数据并以_end结束。这些符号并没有在Linux源代码中定义，它们是内核编译中产生的<sup id="fnref:3"><a href="#fn:3" class="footnote">3</a></sup>。</p>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>物理地址存在但被保留，对应的页框不能由操作系统使用。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>从0x9f（LOWMEMSIZE）到0x100（HIGH_MEMORY）号的所有页框都标记为保留。 <a href="#fnref:2" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:3">
+      <p>在System.map文件中找到这些符号的线性地址，System.map是编译内核以后所创建的。 <a href="#fnref:3" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#内存">#内存</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#物理内存">#物理内存</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#物理内存布局">#物理内存布局</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-and-page-descriptor/" class="pre">&lt; 页及其描述符</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/thread-page-table-and-kernel-page-table/" class="next">进程页表页和内核页表 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm内存寻址_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章物理内存布局写于2014年04月17日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

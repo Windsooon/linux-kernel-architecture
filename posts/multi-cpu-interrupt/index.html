@@ -1,0 +1,224 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>处理器间中断处理|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 处理器间中断处理..." name="description"/>
+  <meta content="中断处理," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/multi-cpu-interrupt/" />
+  <meta property="og:title" content="处理器间中断处理" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 处理器间中断处理..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">处理器间中断处理</div>
+
+  <div class="content interrupt中断和异常_content_css">
+    <p>处理器间中断允许一个CPU向系统其他的CPU发送中断信号，处理器间中断（IPI）不是通过IRQ线传输的，而是作为信号直接放在连接所有CPU本地APIC的总线上。在多处理器系统上，Linux定义了下列三种处理器间中断：</p>
+
+<p><strong>CALL_FUNCTION_VECTOR</strong> （<em>向量0xfb</em>）</p>
+
+<p>发往所有的CPU，但不包括发送者，强制这些CPU运行发送者传递过来的函数，相应的中断处理程序叫做<em>call_function_interrupt()</em>，例如，地址存放在群居变量<em>call_data</em>中来传递的函数，可能强制其他所有的CPU都停止，也可能强制它们设置内存类型范围寄存器的内容。通常，这种中断发往所有的CPU，但通过<em>smp_call_function()</em>执行调用函数的CPU除外。</p>
+
+<p><strong>RESCHEDULE_VECTOR</strong> （<em>向量0xfc</em>）</p>
+
+<p>当一个CPU接收这种类型的中断时，相应的处理程序限定自己来应答中断，当从中断返回时，所有的重新调度都自动运行。</p>
+
+<p><strong>INVALIDATE_TLB_VECTOR</strong> （<em>向量0xfd</em>）</p>
+
+<p>发往所有的CPU，但不包括发送者，强制它们的转换后援缓冲器TLB变为无效。相应的处理程序刷新处理器的某些TLB表项。</p>
+
+<hr />
+
+<p>处理器间中断处理程序的汇编语言代码是由<em>BUILD_INTERRUPT</em>宏产生的，它保存寄存器，从栈顶押入向量号减256的值，然后调用高级C函数，其名字就是第几处理程序的名字加前缀<em>smp_</em>，例如<em>CALL_FUNCTION_VECTOR</em>类型的处理器间中断的低级处理程序时<em>call_function_interrupt()</em>，它调用名为<em>smp_call_function_interrupt()</em>的高级处理程序，每个高级处理程序应答本地APIC上的处理器间中断，然后执行由中断触发的特定操作。</p>
+
+<p>Linux有一组函数使得发生处理器间中断变为一件容易的事：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>函数</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>send_IPI_all()</td>
+      <td>发送一个IPI到所有CPU，包括发送者</td>
+    </tr>
+    <tr>
+      <td>send_IPI_allbutself()</td>
+      <td>发送一个IPI到所有CPU，不包括发送者</td>
+    </tr>
+    <tr>
+      <td>send_IPI_self()</td>
+      <td>发送一个IPI到发送者的CPU</td>
+    </tr>
+    <tr>
+      <td>send_IPI_mask()</td>
+      <td>发送一个IPI到位掩码指定的一组CPU</td>
+    </tr>
+  </tbody>
+</table>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#中断处理">#中断处理</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/io-interrupt-dynamic/" class="pre">&lt; 动态分配IRQ线</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab/" class="next">slab分配器 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments interrupt中断和异常_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章处理器间中断处理写于2014年05月07日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

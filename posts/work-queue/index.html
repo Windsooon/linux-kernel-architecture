@@ -1,0 +1,626 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>工作队列|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 工作队列..." name="description"/>
+  <meta content="工作队列," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/work-queue/" />
+  <meta property="og:title" content="工作队列" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 工作队列..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">工作队列</div>
+
+  <div class="content interrupt中断和异常_content_css">
+    <p>在Linux2.6中引入了工作队列，用来代替早期的任务队列，它们允许内核函数被激活，而且稍后由一种叫做工作者线程（<em>worker thread</em>）的特殊内核线程来执行。</p>
+
+<p>尽管可延迟函数和工作队列非常相似，但是它们的区别还是很大，主要的区别在于，可延迟函数运行在中断上下文中，而工作队列中的函数运行在进程上下文中。执行可租色函数的唯一方式是在进程上下文中运行，因为，正如<a href="/linux-kernel-architecture/posts/loop-interrupt/">处理程序的嵌套执行</a>中提到的，在中断上下文中不可能发生进程切换。</p>
+
+<p>可延迟函数和工作队列中的函数都不能访问进程的用户空间态的地址，实际上，可延迟函数执行时不能确定哪个进程正在运行，另一方面，工作队列中的函数是由内核线程来执行的，所以根本不存在它要访问的用户态地址空间。</p>
+
+<h3 id="section">数据结构</h3>
+
+<p>与工作队列相关的主要数据结构是<em>workqueue_struct</em>，代码如下：</p>
+
+<h4 id="kernelworkqueuec">&lt;kernel/workqueue.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">workqueue_struct</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">cpu_workqueue_struct</span> <span class="o">*</span><span class="n">cpu_wq</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">list</span><span class="p">;</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">singlethread</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">freezeable</span><span class="p">;</span>     <span class="cm">/* 检查挂起的时候是否能冻结进程 */</span>
+    <span class="kt">int</span> <span class="n">rt</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_LOCKDEP
+</span>    <span class="k">struct</span> <span class="n">lockdep_map</span> <span class="n">lockdep_map</span><span class="p">;</span>
+<span class="cp">#endif
+</span><span class="p">};</span></code></pre></div>
+
+<p>其中的<em>cpu_wq</em>是一个<em>cpu_workqueue_struct</em>结构体，代码如下：</p>
+
+<h4 id="kernelworkqueuec-1">&lt;kernel/workqueue.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">cpu_workqueue_struct</span> <span class="p">{</span>
+
+    <span class="n">spinlock_t</span> <span class="n">lock</span><span class="p">;</span>
+
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">worklist</span><span class="p">;</span>
+    <span class="n">wait_queue_head_t</span> <span class="n">more_work</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">work_struct</span> <span class="o">*</span><span class="n">current_work</span><span class="p">;</span>
+
+    <span class="k">struct</span> <span class="n">workqueue_struct</span> <span class="o">*</span><span class="n">wq</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="kr">thread</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">____cacheline_aligned</span><span class="p">;</span></code></pre></div>
+
+<p>其中字段及其意义如下：</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>lock</td>
+      <td>保护该数据结构的自旋锁</td>
+    </tr>
+    <tr>
+      <td>worklist</td>
+      <td>挂起的链表的头结点</td>
+    </tr>
+    <tr>
+      <td>more_work</td>
+      <td>等待队列，其中的工作者线程因等待更多的工作而处于睡眠的状态</td>
+    </tr>
+    <tr>
+      <td>current_work</td>
+      <td>当前工作</td>
+    </tr>
+    <tr>
+      <td>wq</td>
+      <td>指向<em>workqueue_struct</em>结构的指针，其中包含该描述符</td>
+    </tr>
+    <tr>
+      <td>thread</td>
+      <td>指向结构中工作者线程的进程描述符指针</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><em>cpu_workqueue_struct</em>结构的<em>worklist</em>字段是一个双向链表的头，链表集中了工作队列中所有挂起函数。</p>
+
+<h4 id="linuxincludeworkqueueh">&lt;linux/include/workqueue.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">work_struct</span> <span class="p">{</span>
+    <span class="n">atomic_long_t</span> <span class="n">data</span><span class="p">;</span>
+<span class="cp">#define WORK_STRUCT_PENDING 0
+#define WORK_STRUCT_FLAG_MASK (3UL)
+#define WORK_STRUCT_WQ_DATA_MASK (~WORK_STRUCT_FLAG_MASK)
+</span>    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">entry</span><span class="p">;</span>
+    <span class="n">work_func_t</span> <span class="n">func</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_LOCKDEP
+</span>    <span class="k">struct</span> <span class="n">lockdep_map</span> <span class="n">lockdep_map</span><span class="p">;</span>
+<span class="cp">#endif
+</span><span class="p">};</span></code></pre></div>
+
+<p>其中字段及其意义如下：</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>data</td>
+      <td>传递给挂起函数的参数，是一个指针</td>
+    </tr>
+    <tr>
+      <td>entry</td>
+      <td>指向挂起函数链表前一个或后一个元素的指针</td>
+    </tr>
+    <tr>
+      <td>func</td>
+      <td>挂起函数的地址</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>可以看到无论是<em>workqueue_struct</em>还是<em>work_struct</em>都有一个<em>lockdep_map</em>，<em>lockdep_map</em>用于映射被锁的对象的实例到锁的类。我们可以看看这个<em>lockdep_map</em>的代码：</p>
+
+<h4 id="linuxincludelockdeph">&lt;linux/include/lockdep.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">lockdep_map</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">lock_class_key</span>   <span class="o">*</span><span class="n">key</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">lock_class</span>       <span class="o">*</span><span class="n">class_cache</span><span class="p">;</span>
+    <span class="k">const</span> <span class="kt">char</span>              <span class="o">*</span><span class="n">name</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_LOCK_STAT
+</span>    <span class="kt">int</span>                     <span class="n">cpu</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>           <span class="n">ip</span><span class="p">;</span>
+<span class="cp">#endif
+</span><span class="p">};</span></code></pre></div>
+
+<h3 id="section-1">创建工作队列</h3>
+
+<p>创建工作队列使用宏<em>create_workqueue</em>，但<em>create_workqueue</em>宏只是另一个函数的快捷调用，初始化了一些参数而已，最终会使用<em>__create_workqueue</em>。</p>
+
+<h4 id="linuxincludeworkqueueh-1">&lt;linux/include/workqueue.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define create_workqueue(name) \
+    __create_workqueue((name), 0, 0, 0)
+</span>
+<span class="cp">#define create_rt_workqueue(name) \
+    __create_workqueue((name), 0, 0, 1)
+</span>
+<span class="cp">#define create_freezeable_workqueue(name) \
+    __create_workqueue((name), 1, 1, 0)
+</span>
+<span class="cp">#define create_singlethread_workqueue(name) \
+    __create_workqueue((name), 1, 0, 0)</span></code></pre></div>
+
+<p>我们可以看到大多数的创建工作队列的函数最终都是使用同一个函数，只是参数不同而已。创建工作队列的函数接收一个字符串作为参数，返回新创建工作队列的<em>workqueue_struct</em>描述符地址。函数还创建<em>n</em>个工作者线程，并根据传递给函数的字符串为工作者线程命名，其中<em>n</em>是当前系统上正在运行的CPU的数量。</p>
+
+<p><em>create_singlethread_workqueue</em>只创建一个工作者线程，内核调用<em>destroy_workqueue()</em>函数撤销工作队列。</p>
+
+<p>对于创建工作队列的核心代码逻辑，我们可以看如下代码：</p>
+
+<h4 id="kernelworkqueuec-2">&lt;kernel/workqueue.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">workqueue_struct</span> <span class="o">*</span><span class="nf">__create_workqueue_key</span><span class="p">(</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">singlethread</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">freezeable</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">rt</span><span class="p">,</span>
+    <span class="k">struct</span> <span class="n">lock_class_key</span> <span class="o">*</span><span class="n">key</span><span class="p">,</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">lock_name</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">workqueue_struct</span> <span class="o">*</span><span class="n">wq</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">cpu_workqueue_struct</span> <span class="o">*</span><span class="n">cwq</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">err</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="n">cpu</span><span class="p">;</span>
+    <span class="c1">// 初始化申请工作队列内存（页框）
+</span>    <span class="n">wq</span> <span class="o">=</span> <span class="n">kzalloc</span><span class="p">(</span><span class="k">sizeof</span><span class="p">(</span><span class="o">*</span><span class="n">wq</span><span class="p">),</span> <span class="n">GFP_KERNEL</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">wq</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+
+    <span class="n">wq</span><span class="o">-&gt;</span><span class="n">cpu_wq</span> <span class="o">=</span> <span class="n">alloc_percpu</span><span class="p">(</span><span class="k">struct</span> <span class="n">cpu_workqueue_struct</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">wq</span><span class="o">-&gt;</span><span class="n">cpu_wq</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">kfree</span><span class="p">(</span><span class="n">wq</span><span class="p">);</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="c1">// 通过name把工作队列的名字命名并初始化工作队列
+</span>    <span class="n">wq</span><span class="o">-&gt;</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="p">;</span>
+    <span class="n">lockdep_init_map</span><span class="p">(</span><span class="o">&amp;</span><span class="n">wq</span><span class="o">-&gt;</span><span class="n">lockdep_map</span><span class="p">,</span> <span class="n">lock_name</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+    <span class="n">wq</span><span class="o">-&gt;</span><span class="n">singlethread</span> <span class="o">=</span> <span class="n">singlethread</span><span class="p">;</span>
+    <span class="n">wq</span><span class="o">-&gt;</span><span class="n">freezeable</span> <span class="o">=</span> <span class="n">freezeable</span><span class="p">;</span>
+    <span class="n">wq</span><span class="o">-&gt;</span><span class="n">rt</span> <span class="o">=</span> <span class="n">rt</span><span class="p">;</span>
+    <span class="c1">// 初始化链表头
+</span>    <span class="n">INIT_LIST_HEAD</span><span class="p">(</span><span class="o">&amp;</span><span class="n">wq</span><span class="o">-&gt;</span><span class="n">list</span><span class="p">);</span>
+
+    <span class="c1">// 如果只创建一个工作者线程
+</span>    <span class="c1">// static int singlethread_cpu __read_mostly;
+</span>    <span class="k">if</span> <span class="p">(</span><span class="n">singlethread</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">cwq</span> <span class="o">=</span> <span class="n">init_cpu_workqueue</span><span class="p">(</span><span class="n">wq</span><span class="p">,</span> <span class="n">singlethread_cpu</span><span class="p">);</span>
+        <span class="n">err</span> <span class="o">=</span> <span class="n">create_workqueue_thread</span><span class="p">(</span><span class="n">cwq</span><span class="p">,</span> <span class="n">singlethread_cpu</span><span class="p">);</span>
+        <span class="n">start_workqueue_thread</span><span class="p">(</span><span class="n">cwq</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="n">cpu_maps_update_begin</span><span class="p">();</span>
+        <span class="n">spin_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">workqueue_lock</span><span class="p">);</span>
+        <span class="c1">// 将队列插入到链表头
+</span>        <span class="n">list_add</span><span class="p">(</span><span class="o">&amp;</span><span class="n">wq</span><span class="o">-&gt;</span><span class="n">list</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">workqueues</span><span class="p">);</span>
+        <span class="n">spin_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">workqueue_lock</span><span class="p">);</span>
+        <span class="c1">// 为每个CPU创建一个工作者线程
+</span>        <span class="n">for_each_possible_cpu</span><span class="p">(</span><span class="n">cpu</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">cwq</span> <span class="o">=</span> <span class="n">init_cpu_workqueue</span><span class="p">(</span><span class="n">wq</span><span class="p">,</span> <span class="n">cpu</span><span class="p">);</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">err</span> <span class="o">||</span> <span class="o">!</span><span class="n">cpu_online</span><span class="p">(</span><span class="n">cpu</span><span class="p">))</span>
+                <span class="k">continue</span><span class="p">;</span>
+            <span class="n">err</span> <span class="o">=</span> <span class="n">create_workqueue_thread</span><span class="p">(</span><span class="n">cwq</span><span class="p">,</span> <span class="n">cpu</span><span class="p">);</span>
+            <span class="n">start_workqueue_thread</span><span class="p">(</span><span class="n">cwq</span><span class="p">,</span> <span class="n">cpu</span><span class="p">);</span>
+        <span class="p">}</span>
+        <span class="n">cpu_maps_update_done</span><span class="p">();</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">err</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">destroy_workqueue</span><span class="p">(</span><span class="n">wq</span><span class="p">);</span>
+        <span class="n">wq</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">wq</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL_GPL</span><span class="p">(</span><span class="n">__create_workqueue_key</span><span class="p">);</span></code></pre></div>
+
+<p><em>queue_work()</em>函数把函数插入到工作队列，它接收<em>wq</em>和<em>work</em>两个指针，<em>wq</em>指向<em>workqueue_struct</em>结构，<em>work</em>指向<em>work_struct</em>结构体。</p>
+
+<h4 id="linuxincludeworkqueueh-2">&lt;linux/include/workqueue.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">extern</span> <span class="kt">int</span> <span class="n">queue_work</span><span class="p">(</span>
+    <span class="k">struct</span> <span class="n">workqueue_struct</span> <span class="o">*</span><span class="n">wq</span><span class="p">,</span>
+    <span class="k">struct</span> <span class="n">work_struct</span> <span class="o">*</span><span class="n">work</span><span class="p">);</span></code></pre></div>
+
+<p>这个函数主要执行下列步骤：</p>
+
+<ol>
+  <li>检查要插入的函数是否已经在工作队列中，通过<em>work-&gt;pending</em>字段是否等于1判断，如果已经存在就结束。</li>
+  <li>把<em>work_struct</em>描述符加到工作队列链表中，然后把<em>work-&gt;pending</em>设置为1。</li>
+  <li>如果工作者线程在本地的CPU的<em>cpu_workqueue_struct</em>描述符的<em>more_work</em>等待队列上睡眠，那么就唤醒这个线程。</li>
+</ol>
+
+<p><em>queue_delayed_work()</em>函数和<em>queue_work()</em>几乎相同，只是<em>queue_delayed_work()</em>函数多一个以系统滴答数<em>delay</em>来表示时间延迟的参数。</p>
+
+<h4 id="kernelworkqueuec-3">&lt;kernel/workqueue.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">int</span> <span class="nf">queue_delayed_work</span><span class="p">(</span>
+    <span class="k">struct</span> <span class="n">workqueue_struct</span> <span class="o">*</span><span class="n">wq</span><span class="p">,</span>
+    <span class="k">struct</span> <span class="n">delayed_work</span> <span class="o">*</span><span class="n">dwork</span><span class="p">,</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">delay</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">delay</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">queue_work</span><span class="p">(</span><span class="n">wq</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">dwork</span><span class="o">-&gt;</span><span class="n">work</span><span class="p">);</span>
+
+    <span class="k">return</span> <span class="n">queue_delayed_work_on</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">wq</span><span class="p">,</span> <span class="n">dwork</span><span class="p">,</span> <span class="n">delay</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL_GPL</span><span class="p">(</span><span class="n">queue_delayed_work</span><span class="p">);</span></code></pre></div>
+
+<p><em>delay</em>用于确保挂起的函数在执行前的等待时间尽可能的短，实际上<em>queue_delayed_work</em>依靠软定时器把<em>work_struct</em>描述符插入工作队列链表的实际操作向后推迟了。如果相应的<em>work_struct</em>描述符还没有插入工作队列链表，<em>cancel_delayed_work()</em>就删除曾被调度过的工作队列函数。</p>
+
+<p>可以看到，如果<em>delay</em>为0，那么就执行<em>queue_work()</em>函数，否则就执行<em>queue_delayed_work_on()</em>函数。</p>
+
+<h4 id="kernelworkqueuec-4">&lt;kernel/workqueue.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="c1">// cpu表示要执行work的CPU的数量
+</span><span class="kt">int</span> <span class="nf">queue_delayed_work_on</span><span class="p">(</span>
+    <span class="kt">int</span> <span class="n">cpu</span><span class="p">,</span> <span class="k">struct</span> <span class="n">workqueue_struct</span> <span class="o">*</span><span class="n">wq</span><span class="p">,</span>
+    <span class="k">struct</span> <span class="n">delayed_work</span> <span class="o">*</span><span class="n">dwork</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">delay</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">int</span> <span class="n">ret</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">timer_list</span> <span class="o">*</span><span class="n">timer</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">dwork</span><span class="o">-&gt;</span><span class="n">timer</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">work_struct</span> <span class="o">*</span><span class="n">work</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">dwork</span><span class="o">-&gt;</span><span class="n">work</span><span class="p">;</span>
+    <span class="c1">// 将work设置为WORK_STRUCT_PENDING
+</span>    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">test_and_set_bit</span><span class="p">(</span><span class="n">WORK_STRUCT_PENDING</span><span class="p">,</span> <span class="n">work_data_bits</span><span class="p">(</span><span class="n">work</span><span class="p">)))</span> <span class="p">{</span>
+        <span class="n">BUG_ON</span><span class="p">(</span><span class="n">timer_pending</span><span class="p">(</span><span class="n">timer</span><span class="p">));</span>
+        <span class="n">BUG_ON</span><span class="p">(</span><span class="o">!</span><span class="n">list_empty</span><span class="p">(</span><span class="o">&amp;</span><span class="n">work</span><span class="o">-&gt;</span><span class="n">entry</span><span class="p">));</span>
+
+        <span class="n">timer_stats_timer_set_start_info</span><span class="p">(</span><span class="o">&amp;</span><span class="n">dwork</span><span class="o">-&gt;</span><span class="n">timer</span><span class="p">);</span>
+        <span class="c1">// worker增加计时器
+</span>        <span class="n">set_wq_data</span><span class="p">(</span><span class="n">work</span><span class="p">,</span> <span class="n">wq_per_cpu</span><span class="p">(</span><span class="n">wq</span><span class="p">,</span> <span class="n">raw_smp_processor_id</span><span class="p">()));</span>
+        <span class="n">timer</span><span class="o">-&gt;</span><span class="n">expires</span> <span class="o">=</span> <span class="n">jiffies</span> <span class="o">+</span> <span class="n">delay</span><span class="p">;</span>
+        <span class="n">timer</span><span class="o">-&gt;</span><span class="n">data</span> <span class="o">=</span> <span class="p">(</span><span class="kt">unsigned</span> <span class="kt">long</span><span class="p">)</span><span class="n">dwork</span><span class="p">;</span>
+        <span class="n">timer</span><span class="o">-&gt;</span><span class="n">function</span> <span class="o">=</span> <span class="n">delayed_work_timer_fn</span><span class="p">;</span>
+
+        <span class="c1">// 如果CPU的数量大于0
+</span>        <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">cpu</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">))</span>
+            <span class="c1">// 每个都增加一个timer计时器
+</span>            <span class="n">add_timer_on</span><span class="p">(</span><span class="n">timer</span><span class="p">,</span> <span class="n">cpu</span><span class="p">);</span>
+        <span class="k">else</span>
+            <span class="n">add_timer</span><span class="p">(</span><span class="n">timer</span><span class="p">);</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">ret</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL_GPL</span><span class="p">(</span><span class="n">queue_delayed_work_on</span><span class="p">);</span></code></pre></div>
+
+<p>每个工作者线程在<em>worker_thread()</em>函数内部不断地执行循环操作，因而，线程在绝大多数时间里处于睡眠状态并等待某些工作被插入队列。工作线程一旦被唤醒就调用<em>run_workqueue()</em>函数，这个函数从工作者线程的工作队列链表中删除所有<em>work_struct</em>描述符并执行相应的挂起函数。</p>
+
+<h4 id="kernelworkqueuec-5">&lt;kernel/workqueue.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kt">int</span> <span class="nf">worker_thread</span><span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="n">__cwq</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">cpu_workqueue_struct</span> <span class="o">*</span><span class="n">cwq</span> <span class="o">=</span> <span class="n">__cwq</span><span class="p">;</span>
+    <span class="n">DEFINE_WAIT</span><span class="p">(</span><span class="n">wait</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">wq</span><span class="o">-&gt;</span><span class="n">freezeable</span><span class="p">)</span>
+        <span class="n">set_freezable</span><span class="p">();</span>
+
+    <span class="c1">// 执行循环操作
+</span>    <span class="k">for</span> <span class="p">(;;)</span> <span class="p">{</span>
+        <span class="n">prepare_to_wait</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">more_work</span><span class="p">,</span>
+            <span class="o">&amp;</span><span class="n">wait</span><span class="p">,</span>
+            <span class="n">TASK_INTERRUPTIBLE</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">freezing</span><span class="p">(</span><span class="n">current</span><span class="p">)</span> <span class="o">&amp;&amp;</span>
+            <span class="o">!</span><span class="n">kthread_should_stop</span><span class="p">()</span> <span class="o">&amp;&amp;</span>
+            <span class="n">list_empty</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">worklist</span><span class="p">))</span>
+            <span class="n">schedule</span><span class="p">();</span>
+        <span class="n">finish_wait</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">more_work</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">wait</span><span class="p">);</span>
+
+        <span class="n">try_to_freeze</span><span class="p">();</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">kthread_should_stop</span><span class="p">())</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="c1">// 执行相应的挂起函数
+</span>        <span class="n">run_workqueue</span><span class="p">(</span><span class="n">cwq</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>由于工作队列函数可以阻塞，因此，可以让工作者线程睡眠，甚至可以让它迁入到另一个CPU上恢复执行<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。有时候，内核必须等待工作低劣中所有的挂起函数执行完毕。<em>flush_workqueue()</em>函数接收一个<em>workqueue_struct</em>描述符的地址，并且在工作队列中的所有挂起函数结束之前使调用进程一直处于阻塞状态。但是这个函数不会等待在调用这个函数之后新加入工作队列的挂起函数。</p>
+
+<p>会过来看<em>run_workqueue</em>函数，我们可以看到这个函数从工作者线程的工作队列链表中删除所有<em>work_struct</em>描述符并执行相应的挂起函数。</p>
+
+<h4 id="kernelworkqueuec-6">&lt;kernel/workqueue.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kt">void</span> <span class="nf">run_workqueue</span><span class="p">(</span><span class="k">struct</span> <span class="n">cpu_workqueue_struct</span> <span class="o">*</span><span class="n">cwq</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="c1">// 给cpu_workqueue_struct实例上上自旋锁
+</span>    <span class="n">spin_lock_irq</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">);</span>
+    <span class="c1">// 当CPU上工作队列的列表不为空时执行循环
+</span>    <span class="k">while</span> <span class="p">(</span><span class="o">!</span><span class="n">list_empty</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">worklist</span><span class="p">))</span> <span class="p">{</span>
+        <span class="k">struct</span> <span class="n">work_struct</span> <span class="o">*</span><span class="n">work</span> <span class="o">=</span> <span class="n">list_entry</span><span class="p">(</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">worklist</span><span class="p">.</span><span class="n">next</span><span class="p">,</span>
+                        <span class="k">struct</span> <span class="n">work_struct</span><span class="p">,</span> <span class="n">entry</span><span class="p">);</span>
+        <span class="c1">// 通过 work-&gt;func 获取到执行函数
+</span>        <span class="n">work_func_t</span> <span class="n">f</span> <span class="o">=</span> <span class="n">work</span><span class="o">-&gt;</span><span class="n">func</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_LOCKDEP
+</span>        <span class="k">struct</span> <span class="n">lockdep_map</span> <span class="n">lockdep_map</span> <span class="o">=</span> <span class="n">work</span><span class="o">-&gt;</span><span class="n">lockdep_map</span><span class="p">;</span>
+<span class="cp">#endif
+</span>        <span class="n">trace_workqueue_execution</span><span class="p">(</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="kr">thread</span><span class="p">,</span> <span class="n">work</span><span class="p">);</span>
+        <span class="c1">// 设置当前的工作
+</span>        <span class="n">cwq</span><span class="o">-&gt;</span><span class="n">current_work</span> <span class="o">=</span> <span class="n">work</span><span class="p">;</span>
+        <span class="c1">// 删除链表中的元素
+</span>        <span class="n">list_del_init</span><span class="p">(</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">worklist</span><span class="p">.</span><span class="n">next</span><span class="p">);</span>
+        <span class="c1">// 解锁自旋锁
+</span>        <span class="n">spin_unlock_irq</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">);</span>
+
+        <span class="n">BUG_ON</span><span class="p">(</span><span class="n">get_wq_data</span><span class="p">(</span><span class="n">work</span><span class="p">)</span> <span class="o">!=</span> <span class="n">cwq</span><span class="p">);</span>
+        <span class="c1">// 移除pending
+</span>        <span class="n">work_clear_pending</span><span class="p">(</span><span class="n">work</span><span class="p">);</span>
+        <span class="n">lock_map_acquire</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">wq</span><span class="o">-&gt;</span><span class="n">lockdep_map</span><span class="p">);</span>
+        <span class="n">lock_map_acquire</span><span class="p">(</span><span class="o">&amp;</span><span class="n">lockdep_map</span><span class="p">);</span>
+        <span class="c1">// 执行相应的work的函数
+</span>        <span class="n">f</span><span class="p">(</span><span class="n">work</span><span class="p">);</span>
+        <span class="n">lock_map_release</span><span class="p">(</span><span class="o">&amp;</span><span class="n">lockdep_map</span><span class="p">);</span>
+        <span class="n">lock_map_release</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">wq</span><span class="o">-&gt;</span><span class="n">lockdep_map</span><span class="p">);</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">in_atomic</span><span class="p">()</span> <span class="o">||</span> <span class="n">lockdep_depth</span><span class="p">(</span><span class="n">current</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">))</span> <span class="p">{</span>
+            <span class="c1">// ... 调试信息 ...
+</span>        <span class="p">}</span>
+        <span class="c1">// 上自旋锁
+</span>        <span class="n">spin_lock_irq</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">);</span>
+        <span class="c1">// 把当前任务设置为NULL
+</span>        <span class="n">cwq</span><span class="o">-&gt;</span><span class="n">current_work</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="c1">// 解锁自旋锁
+</span>    <span class="n">spin_unlock_irq</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cwq</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">);</span>
+<span class="p">}</span></code></pre></div>
+
+<h3 id="section-2">删除工作队列</h3>
+
+<p>删除工作队列比较简单，删除工作队列使用<em>destory_workqueue()</em>函数，其中会遍历CPU并且删除相应的工作队列信息。</p>
+
+<h4 id="kernelworkqueuec-7">&lt;kernel/workqueue.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">void</span> <span class="nf">destroy_workqueue</span><span class="p">(</span><span class="k">struct</span> <span class="n">workqueue_struct</span> <span class="o">*</span><span class="n">wq</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">const</span> <span class="k">struct</span> <span class="n">cpumask</span> <span class="o">*</span><span class="n">cpu_map</span> <span class="o">=</span> <span class="n">wq_cpu_map</span><span class="p">(</span><span class="n">wq</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="n">cpu</span><span class="p">;</span>
+
+    <span class="n">cpu_maps_update_begin</span><span class="p">();</span>
+    <span class="n">spin_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">workqueue_lock</span><span class="p">);</span>
+    <span class="n">list_del</span><span class="p">(</span><span class="o">&amp;</span><span class="n">wq</span><span class="o">-&gt;</span><span class="n">list</span><span class="p">);</span>
+    <span class="n">spin_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">workqueue_lock</span><span class="p">);</span>
+
+    <span class="n">for_each_cpu</span><span class="p">(</span><span class="n">cpu</span><span class="p">,</span> <span class="n">cpu_map</span><span class="p">)</span>
+        <span class="c1">// 删除工作者线程
+</span>        <span class="n">cleanup_workqueue_thread</span><span class="p">(</span><span class="n">per_cpu_ptr</span><span class="p">(</span><span class="n">wq</span><span class="o">-&gt;</span><span class="n">cpu_wq</span><span class="p">,</span> <span class="n">cpu</span><span class="p">));</span>
+    <span class="n">cpu_maps_update_done</span><span class="p">();</span>
+
+    <span class="n">free_percpu</span><span class="p">(</span><span class="n">wq</span><span class="o">-&gt;</span><span class="n">cpu_wq</span><span class="p">);</span>
+    <span class="n">kfree</span><span class="p">(</span><span class="n">wq</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL_GPL</span><span class="p">(</span><span class="n">destroy_workqueue</span><span class="p">);</span></code></pre></div>
+
+<h3 id="section-3">预定义工作队列</h3>
+
+<p>在绝大多数情况下，为了运行一个函数而创建整个工作者线程开销过大，所以，内核引入了一个叫做<em>events</em>的预定义工作队列，所以的内核开发者都可以随意使用。预定义工作队列只是一个包括不同内核曾函数和I/O驱动程序的标准工作队列，它的<em>workqueue_struct</em>描述符存放在<em>keventd_wq</em>数组中。</p>
+
+<p>内核提供了如下函数操作工作队列：</p>
+
+<h4 id="kernelworkqueuec-8">&lt;kernel/workqueue.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="c1">// 等价于queue_work(keventd_wq, w)
+</span><span class="kt">int</span> <span class="nf">schedule_work</span><span class="p">(</span><span class="k">struct</span> <span class="n">work_struct</span> <span class="o">*</span><span class="n">work</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">return</span> <span class="n">queue_work</span><span class="p">(</span><span class="n">keventd_wq</span><span class="p">,</span> <span class="n">work</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL</span><span class="p">(</span><span class="n">schedule_work</span><span class="p">);</span>
+
+<span class="c1">// 等价于queue_delayed_work(keventd_wq, w,d)
+// 并且在任何CPU上都可以
+</span><span class="kt">int</span> <span class="nf">schedule_delayed_work_on</span><span class="p">(</span><span class="kt">int</span> <span class="n">cpu</span><span class="p">,</span>
+            <span class="k">struct</span> <span class="n">delayed_work</span> <span class="o">*</span><span class="n">dwork</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">delay</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">return</span> <span class="n">queue_delayed_work_on</span><span class="p">(</span><span class="n">cpu</span><span class="p">,</span> <span class="n">keventd_wq</span><span class="p">,</span> <span class="n">dwork</span><span class="p">,</span> <span class="n">delay</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL</span><span class="p">(</span><span class="n">schedule_delayed_work_on</span><span class="p">);</span>
+
+<span class="c1">// 等价于queue_delayed_work(keventd_wq, w,d)
+// 但是只能在指定的CPU上
+</span><span class="kt">int</span> <span class="nf">schedule_delayed_work</span><span class="p">(</span><span class="k">struct</span> <span class="n">delayed_work</span> <span class="o">*</span><span class="n">dwork</span><span class="p">,</span>
+                    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">delay</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">return</span> <span class="n">queue_delayed_work</span><span class="p">(</span><span class="n">keventd_wq</span><span class="p">,</span> <span class="n">dwork</span><span class="p">,</span> <span class="n">delay</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL</span><span class="p">(</span><span class="n">schedule_delayed_work</span><span class="p">);</span>
+
+<span class="c1">// 等价于flush_workqueue(keventd_wq)
+</span><span class="kt">void</span> <span class="nf">flush_scheduled_work</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">flush_workqueue</span><span class="p">(</span><span class="n">keventd_wq</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL</span><span class="p">(</span><span class="n">flush_scheduled_work</span><span class="p">);</span></code></pre></div>
+
+<p>当函数很少被调用时，预定义工作队列节省了很多重要的系统资源。另一方面，不应该使在预定义工作队列中执行的函数长时间的处于阻塞状态，因为工作队列链表中的挂起函数是在每个CPU上以串行的方式执行的，而太长的延迟对预定义工作队列的其他用户会产生不好的影响。</p>
+
+<p>除了<em>events</em>队列，Linux中还会有一些其他的专用的工作队列，例如<em>kblockd</em>。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>虽然一个工作者线程以及函数会被插入到本地CPU队列中，但系统所有的CPU都可以执行这个函数。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#工作队列">#工作队列</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/vfs-system-interfaces/" class="pre">&lt; VFS相关的系统调用</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/return-from-interrupt-or-exception/" class="next">从中断和异常返回 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments interrupt中断和异常_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章工作队列写于2014年05月12日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

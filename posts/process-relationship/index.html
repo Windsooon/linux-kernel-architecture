@@ -1,0 +1,320 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>进程之间的关系|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 进程之间的关系..." name="description"/>
+  <meta content="父进程,子进程,写时复制,fork,vfork,pidhash," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/process-relationship/" />
+  <meta property="og:title" content="进程之间的关系" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 进程之间的关系..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">进程之间的关系</div>
+
+  <div class="content process进程_content_css">
+    <p>进程之间除了ID连接的关系之外，内核还负责管理建立在UNIX进程创建模型之上的『家族关系』。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/relation.png" alt="system" style="max-width:500px" /></p>
+
+<p class="center">进程之间的关系</p>
+
+<p>如果进程A分支形成进程B，进程A称之为父进程，而进程B称之为子进程。如果进程A分支若干次形成几个子进程B、C、D，则这几个子进程之间称为兄弟关系。</p>
+
+<p>下面简单的列举了进程描述符中相关亲属关系的描述，进程描述符结构可以看<a href="/linux-kernel-architecture/posts/process-descriptor/">《进程描述符》</a>，进程数据结构可以看<a href="/linux-kernel-architecture/posts/process-list/">《进程链表》</a>。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>real_parent</td>
+      <td>指向创建了P的进程描述符，如果P的父进程不存在，就指向进程init的描述符</td>
+    </tr>
+    <tr>
+      <td>parent</td>
+      <td>指向P的当前父进程，当此进程终止时，必须向父进程发信号</td>
+    </tr>
+    <tr>
+      <td>children</td>
+      <td>链表的头部，链表中的所有元素都是P创建的子进程</td>
+    </tr>
+    <tr>
+      <td>sibling</td>
+      <td>指向兄弟进程链表中的下一个元素或前一个元素的指针，这些兄弟进程的父进程都是P</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>建立非亲属关系的进程描述符字段有：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>group_leader</td>
+      <td>P所在进程组的组长的描述符指针</td>
+    </tr>
+    <tr>
+      <td>signal-&gt;pgrp</td>
+      <td>P所在进程组的组长的PID</td>
+    </tr>
+    <tr>
+      <td>tgid</td>
+      <td>P所在线程组的组长的PID</td>
+    </tr>
+    <tr>
+      <td>signal-&gt;session</td>
+      <td>P的登录会话组长的PID</td>
+    </tr>
+    <tr>
+      <td>ptrace_children</td>
+      <td>链表的头，该聊表包含所有被debugger程序跟踪的P的子进程</td>
+    </tr>
+    <tr>
+      <td>ptrace_list</td>
+      <td>指向锁跟踪进程的实际父进程链表的前一个和下一个元素</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="pidhash">pidhash表及链表</h3>
+
+<p>系统调用提供服务的时候会发生如下情况，当进程P1希望向另一个进程P2发送一个信号时，P1调用kill()系统调用，其参数为P2的PID，内核从这个PID导出其对应的进程描述符，然后从P2的进程描述符中取出记录挂起信号的数据结构指针。顺序扫描进程描述符的pid字段是相当低效的，为了加速查找，引入了4个散列表，分别为：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Hash表的类型</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>PIDTYPE_PID</td>
+      <td>进程的PID</td>
+    </tr>
+    <tr>
+      <td>PIDYTPE_TGID</td>
+      <td>进程组的组长的PID</td>
+    </tr>
+    <tr>
+      <td>PIDTYPE_PGID</td>
+      <td>进程组的组长的PID</td>
+    </tr>
+    <tr>
+      <td>PIDTYPE_SID</td>
+      <td>会话组长的PID</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>内核初始化期间动态地为4个散列表分配空间，并把它们的地址存入<em>pid_hash</em>数据组，一个散列表的长度依赖于可用的RAM的容量。用<em>pid_hashfn</em>把PID转换为表索引。<em>pid_hash</em>函数并不一定能保证与表的索引一一对应，不同的PID可能会存在相同的key，就会发生冲突。Linux利用链表来处理冲突。</p>
+
+<h3 id="section">进程复制</h3>
+
+<p>传统的UNIX中用于复制进程的系统调用是<em>fork</em>，但它并不是Linux为此实现的唯一调用，Linux实现了3个。</p>
+
+<p>(1) <em>fork</em>是重量级调用，因为它建立了父进程的一个完整副本，然后作为子进程。</p>
+
+<p>(2) <em>vfork<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup></em>类似于fork，但并不创建父进程数据的副本，相反，父子进程共享数据，节省了大量的CPU。vfork设计用于子进程形成后立即执行<em>execve</em>系统调用，在子进程退出或开始新程序之前，父进程处于堵塞状态。</p>
+
+<p>(3) <em>clone</em>用于产生线程，可以堆父子进程之间的共享、复制进行精确控制。</p>
+
+<p>所有的3个fork机制最终都调用了kernel/fork.c中的<em>do_fork</em>函数，在<em>do_fork</em>中，大多数工作都是由<em>copy_process</em>函数完成的。</p>
+
+<h3 id="section-1">写时复制</h3>
+
+<p>内核使用了写时复制（<em>Copy-On-Write, COW</em>）技术，为防止在fork执行时将父进程的所有数据复制到子进程。因为这样的操作使用的很长的时间，并且耗费了大量的内存。如果应用程序在进程复制之后使用exec立即加载新程序，那么就表明之前的操作完全时没有必要的，因为拷贝了父进程的数据，但立即刷出内存用于新程序。所以内核不复制进程的整个地址空间，而是只复制其页表，这样就建立了虚拟地址空间和物理内存页之间的联系。</p>
+
+<p>当父子进程不允许修改彼此的页，只能够共享的读取数据，则可以共享内存区域。如果任意一个进程试图向复制的内存页中写入数据，那么处理器会向内核报告访问错误，这类错误通常会被视作缺页异常。内核然后查看额外的内存管理数据结构，检查该页是否可以用读写模式访问。如果该页只能以只读模式访问，则向应用程序报告段错误，如果是可写的，内核会创建该页专用于当前进程的副本，并与父进程独立开。</p>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>由于写时复制技术，现在不推荐使用vfork。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#父进程">#父进程</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#子进程">#子进程</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#写时复制">#写时复制</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#fork">#fork</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#vfork">#vfork</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#pidhash">#pidhash</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-list/" class="pre">&lt; 进程链表</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-waiting-link-list/" class="next">组织进程 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments process进程_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章进程之间的关系写于2014年04月09日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,215 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>通用文件模型|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 通用文件模型..." name="description"/>
+  <meta content="文件模型," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/common-file-model/" />
+  <meta property="og:title" content="通用文件模型" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 通用文件模型..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">通用文件模型</div>
+
+  <div class="content virtual_filesystem虚拟文件系统_content_css">
+    <p>VFS所隐含的主要思想在于引入了一个通用文件模型（<em>common file model</em>），这个模型能够表示所有支持的文件系统。该模型严格反映传统Unix文件系统提供的文件模型。这非常强大，因为Linux希望以最小的额外开销运行它本地文件系统。不过，要实现每个具体的文件系统，必须将其物理组织结构转换为虚拟文件系统通用文件模型。</p>
+
+<p>例如，在通用文件模型中，每个目录被看作一个文件，可以包含若干文件和其他的子目录。但是，存在几个非Unix的基于磁盘的文件系统，它们利用文件分配表（<em>File Allocation Table，FAT</em>）存放每个文件在目录树中的位置，在这些文件系统中，存放的是目录而不是文件。为了符合VFS的通用文件模型，对上述基于FAT的文件系统的实现，Linux必须在必要的时候能够快速建立对应于目录的文件。这样的文件只作为内核内存的对象而存在。</p>
+
+<p>从本质上来说，Linux内核不能对一个特定的函数进行硬编码来执行注入<em>read()</em>或<em>loctl()</em>这样的操作，而是对每个操作都必须使用一个指针，指向要访问的具体文件系统的适当函数。</p>
+
+<p>我们可以把通用文件模型看作是面向对象的，在这里，对象是一个软件结构，其中既定义了数据结构也定义了其上的操作方法。处于效率的考虑，Linux的编码并未采用面向对象的程序设计语言。因此对象作为普通的C数据结构来实现，数据机构中指向函数的字段就对应于对象的方法。通用文件模型由下列对象类型组成：</p>
+
+<p><strong>超级块对象（<em>superblock object</em>）</strong></p>
+
+<p>存放已安装文件系统的有关信息，对基于磁盘的文件系统，这类对象通常对应于存放在磁盘上的文件系统控制块（<em>filesystem control block</em>）。</p>
+
+<p><strong>索引节点对象（<em>inode object</em>）</strong></p>
+
+<p>存放于具体文件的一般信息，对基于磁盘的文件系统，这类对象通常对应于存放在磁盘上的文件控制块（<em>file control block</em>）。每个索引节点对象都有一个索引节点号。这个节点号唯一地标识文件系统中的文件。</p>
+
+<p><strong>文件对象（<em>file object</em>）</strong></p>
+
+<p>存放打开文件与进程之间进行交互的有关信息，这类信息仅当进程访问文件期间存在于内核内存中。</p>
+
+<p><strong>目录项对象（<em>dentry object</em>）</strong></p>
+
+<p>存放目录项，也就是文件的特定名称，与对应文件进行链接的有关信息。每个磁盘文件系统都以自己特有的方式将改类信息存在磁盘上。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/vfs2.png" alt="vfs" style="max-width:550px" /></p>
+
+<p class="center">进程与VFS对象之间的交互</p>
+
+<p>如上图所示的一个简单的示例，说明进程怎样与文件系统交互。三个不同的进程已经打开同一个文件，其中两个进程使用同一个硬链接。在这种情况下，其中的每一个进程都能使用自己的文件对象，但只需要两个目录项对象，每个硬链接对应一个目录项对象。这两个目录项对象指向同一个索引节点对象，该索引节点对象标识超级块对象，以及随后的普通磁盘文件。</p>
+
+<p>VFS除了能为所有文件系统的实现提供一个通用接口外，还具有另一个与系统性能相关的重要作用。最近最常使用的目录项对象被放在所谓目录项高速缓存的磁盘高速缓存中，以加速从文件路径名到最后一个路径分量的索引节点的转换过程。</p>
+
+<p>一般来说，磁盘高速缓存（<em>disk cache</em>）属于软件机制，它允许内核将原本存在磁盘上的某些信息保存在RAM中，以便对这些数据的进一步访问能快速进行而不必慢速访问磁盘本身。</p>
+
+<p>磁盘高速缓存不同于硬件高速缓存或内存高速缓存，后两者都与磁盘或其他设备无关，硬件高速缓存是一个快速静态RAM，它加快了直接对慢速动态RAM的请求。内存高速缓存是一种软件机制，引入它是为了绕过内核分配器。可参考<a href="/linux-kernel-architecture/posts/system-hardware-cache-and-tlb/">硬件高速缓存和TLB</a>章节。</p>
+
+<p>除了目录项高速缓存和索引节点高速缓存之外，Linux还能使用其他磁盘高速缓存，其中最为重要的一种就是所谓的页高速缓存。</p>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#文件模型">#文件模型</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/virtual-filesystem/" class="pre">&lt; 虚拟文件系统</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/create-slab/" class="next">slab创建 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments virtual_filesystem虚拟文件系统_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章通用文件模型写于2014年05月12日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

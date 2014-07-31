@@ -1,0 +1,382 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>进程退出|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 进程退出" name="description"/>
+  <meta content="进程撤销,do_group_exit,do_exit," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/group-exit-and-do-exit-a-process/" />
+  <meta property="og:title" content="进程退出" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 进程退出" />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">进程退出</div>
+
+  <div class="content process进程_content_css">
+    <p>很多进程终止了它们需要执行的代码，这些进程就已经结束了，当这种情况发生时，就必须通知内核以便内核释放进程所拥有的资源，包括内存、打开的文件描述符、信号量之类的东西。</p>
+
+<p>进程终止的一般方式时调用exit()库函数，该函数释放C函数库锁分配的资源，执行编程者锁注册的每一个函数，并结束从系统回收进程的那个系统调用。exit()函数可能由编程者显式地插入。另外，C编译程序总是把exit()函数插入到main()函数的最后一条语句。</p>
+
+<p>当进程接收到一个不能处理或忽视的信号时，或者当内核正在代表进程运行时在内核态产生一个不可恢复的CPU异常时，内核可以有选择地强迫整个线程组死掉。</p>
+
+<p>进程终止可以使用两个系统调用：</p>
+
+<ol>
+  <li>exit_group()系统调用，终止整个线程组。</li>
+  <li>exit()系统调用，终止某个线程。</li>
+</ol>
+
+<h3 id="dogroupexit">do_group_exit()函数</h3>
+
+<p>该函数代码如下：</p>
+
+<h4 id="kernelexitc">&lt;kernel/exit.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="n">NORET_TYPE</span> <span class="kt">void</span>
+<span class="nf">do_group_exit</span><span class="p">(</span><span class="kt">int</span> <span class="n">exit_code</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">signal_struct</span> <span class="o">*</span><span class="n">sig</span> <span class="o">=</span> <span class="n">current</span><span class="o">-&gt;</span><span class="n">signal</span><span class="p">;</span>
+
+    <span class="n">BUG_ON</span><span class="p">(</span><span class="n">exit_code</span> <span class="o">&amp;</span> <span class="mh">0x80</span><span class="p">);</span> <span class="cm">/* core dumps don't get here */</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">signal_group_exit</span><span class="p">(</span><span class="n">sig</span><span class="p">))</span>
+        <span class="n">exit_code</span> <span class="o">=</span> <span class="n">sig</span><span class="o">-&gt;</span><span class="n">group_exit_code</span><span class="p">;</span>
+    <span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">thread_group_empty</span><span class="p">(</span><span class="n">current</span><span class="p">))</span> <span class="p">{</span>
+        <span class="k">struct</span> <span class="n">sighand_struct</span> <span class="o">*</span><span class="k">const</span> <span class="n">sighand</span> <span class="o">=</span> <span class="n">current</span><span class="o">-&gt;</span><span class="n">sighand</span><span class="p">;</span>
+        <span class="n">spin_lock_irq</span><span class="p">(</span><span class="o">&amp;</span><span class="n">sighand</span><span class="o">-&gt;</span><span class="n">siglock</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">signal_group_exit</span><span class="p">(</span><span class="n">sig</span><span class="p">))</span>
+            <span class="cm">/* Another thread got here before we took the lock.  */</span>
+            <span class="n">exit_code</span> <span class="o">=</span> <span class="n">sig</span><span class="o">-&gt;</span><span class="n">group_exit_code</span><span class="p">;</span>
+        <span class="k">else</span> <span class="p">{</span>
+            <span class="n">sig</span><span class="o">-&gt;</span><span class="n">group_exit_code</span> <span class="o">=</span> <span class="n">exit_code</span><span class="p">;</span>
+            <span class="n">sig</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">=</span> <span class="n">SIGNAL_GROUP_EXIT</span><span class="p">;</span>
+            <span class="n">zap_other_threads</span><span class="p">(</span><span class="n">current</span><span class="p">);</span>
+        <span class="p">}</span>
+        <span class="n">spin_unlock_irq</span><span class="p">(</span><span class="o">&amp;</span><span class="n">sighand</span><span class="o">-&gt;</span><span class="n">siglock</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="n">do_exit</span><span class="p">(</span><span class="n">exit_code</span><span class="p">);</span>
+    <span class="cm">/* NOTREACHED */</span>
+<span class="p">}</span></code></pre></div>
+
+<p>do_group_exit()函数杀死属于current线程组的所有进程，它接受进程的终止代码号作为参数，进程终止代码号可能时系统调用exit_group()指定的一个值，也可以时内核提供的一个代码号。通常情况下exit_group()说明进程正常中止，而内核提供的代码号通常表示进程异常结束。</p>
+
+<p>代码检查退出进程的SIGNAL_GROUP_EXIT标志是否不为0，如果不为0，说明内核已经开始为线程组执行退出过程，exit_code直接为<em>current-&gt;signal-&gt;group_exit_code</em>。否则，设置进程的SIGNAL_GROUP_EXIT标志并把终止代码号存放到<em>current-&gt;signal-&gt;group_exit_code</em>中。</p>
+
+<p>调用<em>zap_other_threads()</em>函数杀死<em>current</em>线程组中的其他进程，扫描与<em>current-&gt;tgid</em>对应的PIDTYPE_TGID类型的散列表中的每个PID链表，向表中所有不同于current的进程发送SIGKILL信号，以便每个进程都能执行do_exit()函数。</p>
+
+<p>最终调用do_exit()函数。</p>
+
+<h3 id="doexit">do_exit()函数</h3>
+
+<p>do_exit()函数体比较大，并且涉及的知识点过多，所以简单记录一下笔记：</p>
+
+<h4 id="kernelexitc-1">&lt;kernel/exit.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cm">/*
+ * 实际上do_exit做的比我们想象的要多
+ * 虽然是退出一个进程，但要清除进程所
+ * 有使用的资源，包括进程自身，还需要
+ * 注意读写保护，进程组等多种复杂的结
+ * 构。
+ */</span>
+<span class="n">NORET_TYPE</span> <span class="kt">void</span> <span class="n">do_exit</span><span class="p">(</span><span class="kt">long</span> <span class="n">code</span><span class="p">){</span>
+    <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="n">tsk</span> <span class="o">=</span> <span class="n">current</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">group_dead</span><span class="p">;</span>
+
+    <span class="n">profile_task_exit</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+
+    <span class="n">WARN_ON</span><span class="p">(</span><span class="n">atomic_read</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">fs_excl</span><span class="p">));</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">in_interrupt</span><span class="p">()))</span>
+        <span class="n">panic</span><span class="p">(</span><span class="s">"Aiee, killing interrupt handler!"</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="o">!</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">pid</span><span class="p">))</span>
+        <span class="n">panic</span><span class="p">(</span><span class="s">"Attempted to kill the idle task!"</span><span class="p">);</span>
+
+    <span class="n">set_fs</span><span class="p">(</span><span class="n">USER_DS</span><span class="p">);</span>
+
+    <span class="n">tracehook_report_exit</span><span class="p">(</span><span class="o">&amp;</span><span class="n">code</span><span class="p">);</span>
+
+    <span class="n">validate_creds_for_do_exit</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+
+    <span class="c1">// 表示进程正在被删除
+</span>    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">PF_EXITING</span><span class="p">))</span> <span class="p">{</span>
+        <span class="n">printk</span><span class="p">(</span><span class="n">KERN_ALERT</span>
+            <span class="s">"Fixing recursive fault but reboot is needed!</span><span class="se">\n</span><span class="s">"</span><span class="p">);</span>
+        <span class="n">tsk</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">|=</span> <span class="n">PF_EXITPIDONE</span><span class="p">;</span>
+        <span class="n">set_current_state</span><span class="p">(</span><span class="n">TASK_UNINTERRUPTIBLE</span><span class="p">);</span>
+        <span class="n">schedule</span><span class="p">();</span>
+    <span class="p">}</span>
+
+    <span class="n">exit_irq_thread</span><span class="p">();</span>
+
+    <span class="n">exit_signals</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+    <span class="n">smp_mb</span><span class="p">();</span>
+    <span class="n">spin_unlock_wait</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">pi_lock</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">in_atomic</span><span class="p">()))</span>
+        <span class="n">printk</span><span class="p">(</span><span class="n">KERN_INFO</span> <span class="s">"note: %s[%d] exited "</span> \
+                         <span class="s">"with preempt_count %d</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span>
+                <span class="n">current</span><span class="o">-&gt;</span><span class="n">comm</span><span class="p">,</span> <span class="n">task_pid_nr</span><span class="p">(</span><span class="n">current</span><span class="p">),</span>
+                <span class="n">preempt_count</span><span class="p">());</span>
+
+    <span class="n">acct_update_integrals</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+
+    <span class="n">group_dead</span> <span class="o">=</span> <span class="n">atomic_dec_and_test</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">signal</span><span class="o">-&gt;</span><span class="n">live</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">group_dead</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">hrtimer_cancel</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">signal</span><span class="o">-&gt;</span><span class="n">real_timer</span><span class="p">);</span>
+        <span class="n">exit_itimers</span><span class="p">(</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">signal</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">mm</span><span class="p">)</span>
+            <span class="n">setmax_mm_hiwater_rss</span><span class="p">(</span><span class="o">&amp;</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">signal</span><span class="o">-&gt;</span><span class="n">maxrss</span><span class="p">,</span> <span class="n">tsk</span><span class="o">-&gt;</span><span class="n">mm</span><span class="p">);</span>
+    <span class="p">}</span>
+    <span class="n">acct_collect</span><span class="p">(</span><span class="n">code</span><span class="p">,</span> <span class="n">group_dead</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">group_dead</span><span class="p">)</span>
+        <span class="n">tty_audit_exit</span><span class="p">();</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">audit_context</span><span class="p">))</span>
+        <span class="n">audit_free</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+
+    <span class="n">tsk</span><span class="o">-&gt;</span><span class="n">exit_code</span> <span class="o">=</span> <span class="n">code</span><span class="p">;</span>
+    <span class="n">taskstats_exit</span><span class="p">(</span><span class="n">tsk</span><span class="p">,</span> <span class="n">group_dead</span><span class="p">);</span>
+
+    <span class="n">exit_mm</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">group_dead</span><span class="p">)</span>
+        <span class="n">acct_process</span><span class="p">();</span>
+    <span class="n">trace_sched_process_exit</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+
+    <span class="n">exit_sem</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+    <span class="n">exit_files</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+    <span class="n">exit_fs</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+    <span class="n">check_stack_usage</span><span class="p">();</span>
+    <span class="n">exit_thread</span><span class="p">();</span>
+    <span class="n">cgroup_exit</span><span class="p">(</span><span class="n">tsk</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">group_dead</span> <span class="o">&amp;&amp;</span> <span class="n">tsk</span><span class="o">-&gt;</span><span class="n">signal</span><span class="o">-&gt;</span><span class="n">leader</span><span class="p">)</span>
+        <span class="n">disassociate_ctty</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+
+    <span class="n">module_put</span><span class="p">(</span><span class="n">task_thread_info</span><span class="p">(</span><span class="n">tsk</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">exec_domain</span><span class="o">-&gt;</span><span class="n">module</span><span class="p">);</span>
+
+    <span class="n">proc_exit_connector</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+    <span class="n">perf_event_exit_task</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+
+    <span class="n">exit_notify</span><span class="p">(</span><span class="n">tsk</span><span class="p">,</span> <span class="n">group_dead</span><span class="p">);</span>
+<span class="cp">#ifdef CONFIG_NUMA
+</span>    <span class="n">mpol_put</span><span class="p">(</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">mempolicy</span><span class="p">);</span>
+    <span class="n">tsk</span><span class="o">-&gt;</span><span class="n">mempolicy</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="cp">#endif
+#ifdef CONFIG_FUTEX
+</span>    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">current</span><span class="o">-&gt;</span><span class="n">pi_state_cache</span><span class="p">))</span>
+        <span class="n">kfree</span><span class="p">(</span><span class="n">current</span><span class="o">-&gt;</span><span class="n">pi_state_cache</span><span class="p">);</span>
+<span class="cp">#endif
+</span>    <span class="n">debug_check_no_locks_held</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+    <span class="n">tsk</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">|=</span> <span class="n">PF_EXITPIDONE</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">io_context</span><span class="p">)</span>
+        <span class="n">exit_io_context</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">splice_pipe</span><span class="p">)</span>
+        <span class="n">__free_pipe_info</span><span class="p">(</span><span class="n">tsk</span><span class="o">-&gt;</span><span class="n">splice_pipe</span><span class="p">);</span>
+
+    <span class="n">validate_creds_for_do_exit</span><span class="p">(</span><span class="n">tsk</span><span class="p">);</span>
+
+    <span class="n">preempt_disable</span><span class="p">();</span>
+    <span class="n">exit_rcu</span><span class="p">();</span>
+    <span class="n">tsk</span><span class="o">-&gt;</span><span class="n">state</span> <span class="o">=</span> <span class="n">TASK_DEAD</span><span class="p">;</span>
+    <span class="n">schedule</span><span class="p">();</span>
+    <span class="n">BUG</span><span class="p">();</span>
+    <span class="k">for</span> <span class="p">(;;)</span>
+        <span class="n">cpu_relax</span><span class="p">();</span>
+<span class="p">}</span></code></pre></div>
+
+<p>所有的进程的终止都是由do_exit()函数来处理，这个函数从内核数据结构中删除堆终止进程的大部分引用，同样，do_exit()函数接受终止代号作为参数执行。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/exit.png" alt="system" style="max-width:600px" /></p>
+
+<p class="center">进程终止流程图</p>
+
+<p>该函数执行了下列操作：</p>
+
+<p>把进程描述符flag字段设置为PF_EXITING标志，表示进程正在被删除。如果需要，通过函数<em>del_timer_sync()</em>从动态定时器队列中删除进程描述符。</p>
+
+<p>分别调用exit_mm()、exit_sem()、__exit_files()、__exit_fs()、exit_namespace()和exit_thread()函数从进程描述符中分离出与分页、信号量、文件系统、打开文件描述符、命名空间以及I/O位图相关的数据结构，如果没有其他进程共享这些数据结构，那么这些函数还删除所有这些这些数据结构中的数据。</p>
+
+<p>如果实现了被杀死进程的执行域和可执行格式的内核函数包含在内核模块中，则函数递减计数器。</p>
+
+<p>把进程描述符的exit_code字段设置成进程的终止戴好。这个值要么是_exit()或exit_group()系统调用参数，要么是内核提供的错误代码。</p>
+
+<p>调用exit_notify()函数，如果出问题，则变为僵尸进程<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。完成后调用schedule()函数选择一个新进程运行。</p>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>僵尸进程最后由内核改变其父进程为init进程，最终由init进程释放资源。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#进程撤销">#进程撤销</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#do_group_exit">#do_group_exit</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#do_exit">#do_exit</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/execve-replace-process/" class="pre">&lt; 进程替换</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-switch/" class="next">进程切换 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments process进程_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章进程退出写于2014年04月11日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

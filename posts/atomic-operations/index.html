@@ -1,0 +1,319 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>原子操作|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 原子操作..." name="description"/>
+  <meta content="原子操作," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/atomic-operations/" />
+  <meta property="og:title" content="原子操作" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 原子操作..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">原子操作</div>
+
+  <div class="content kernel_preemption内核同步_content_css">
+    <p>有些汇编语言指令具有『读』、『写』、『修改』三种类型，也就是说，它们有时候是以只读的形式从寄存器中读取内容，也有的时候以只读的形式向寄存器中写入内容。</p>
+
+<p>假定运行在两个CPU上的两个内核控制路径试图通过非原子的操作来同时修改一个存储单元，首先两个CPU都试图同时进行读操作，存储器仲裁器<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>进行干预，只允许其中一个访问而让另一个延迟。当第一个操作已经完成后，延迟的CPU从那个存储单元正好读到一个旧的值，这没有关系。</p>
+
+<p>然后两个又尝试去写一个新的值，两次操作同样被存储器仲裁器串行化并同时写入一个新的值，最终，两个写入值的操作都成功，但全局的结果是不对的。为了避免这种情况，就是要确保这样的操作在芯片级别是原子的，任何一个这样的操作都必须以单个指令执行，中间不能中断，而且避免其他的CPU访问同一存储单元，这些很小的操作叫做原子操作。</p>
+
+<p>这些原子操作可以建立在其他更灵活的机制的基础上以创建临界区，80x86的原子指令的情况可以考虑如下：</p>
+
+<ol>
+  <li>进行零次或一次对齐的内存访问的汇编指令是原子的。</li>
+  <li>如果在读操作之后，写操作之前没有其他处理器占用内存总线，那么从内存中读取数据、更新数据并把更新后的数据写回内存中的这些汇编指令如inc或dec是原子的。而且在但处理系统中，永远都不会发生内存总线窃用的情况。</li>
+  <li>操作码前缀是lock字节（0xf0）的『读写修改』的汇编语言指令即使在多处理器系统中也是原子的。当控制单元监测到这个前缀时，就『锁定』内存总线，直到这条指令执行完位置。因此，当枷锁的指令执行时，其他处理器就不能访问这个内存单元。</li>
+  <li>操作码前缀是一个rep字节（0xf2，0xf3）的汇编语言指令不是原子的，这条指令强行让控制单元多次重复执行相同的指令，控制单元在执行新的循环之前要检查挂起的中断。</li>
+</ol>
+
+<p>在使用C代码便携程序时，并不能保证编译器会为a=a+1或者a++这样的代码的操作限定为一个原子指令，所以Linux内核提供专门<em>atomic_t</em>类型和一些专门的函数和宏，这些函数和宏作用于<em>atomic_t</em>类型的变量，并当作单独的，原子的汇编语言指令来使用。</p>
+
+<p>Linux中的原子操作的函数有：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>函数</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>atomic_read(v)</td>
+      <td>返回*v</td>
+    </tr>
+    <tr>
+      <td>atomic_set(v, i)</td>
+      <td>把*v置为i</td>
+    </tr>
+    <tr>
+      <td>atomic_add(i, v)</td>
+      <td>给*v增加i</td>
+    </tr>
+    <tr>
+      <td>atomic_sub(i, v)</td>
+      <td>从*v减去i</td>
+    </tr>
+    <tr>
+      <td>atomic_sub_and_test(i, v)</td>
+      <td>从*v减去i，如果结果为0则返回1，否则返回0</td>
+    </tr>
+    <tr>
+      <td>atomic_inc(v)</td>
+      <td>把1加到*v</td>
+    </tr>
+    <tr>
+      <td>atomic_dec(v)</td>
+      <td>从*v减去1</td>
+    </tr>
+    <tr>
+      <td>atomic_dec_and_test(v)</td>
+      <td>从*v减去1，如果结果为0则返回1，否则返回0</td>
+    </tr>
+    <tr>
+      <td>atomic_inc_and_test(v)</td>
+      <td>把1加到*v，如果结果为0则返回1，否则返回0</td>
+    </tr>
+    <tr>
+      <td>atomic_add_negative(i, v)</td>
+      <td>把i加到*v，如果结果为负，则返回1，否则返回0</td>
+    </tr>
+    <tr>
+      <td>atomic_inc_return(v)</td>
+      <td>把1加到*v，返回*v的值</td>
+    </tr>
+    <tr>
+      <td>atomic_dec_return(v)</td>
+      <td>从*v总减去1，并返回*v的值</td>
+    </tr>
+    <tr>
+      <td>atomic_add_return(i, v)</td>
+      <td>把i加到*v并返回</td>
+    </tr>
+    <tr>
+      <td>atomic_sub_return(i, v)</td>
+      <td>从*v减去i并返回</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>还有一些操作掩码的函数：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>函数</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>test_bit(nr, addr)</td>
+      <td>返回*addr的nr位的值</td>
+    </tr>
+    <tr>
+      <td>set_bit(nr, addr)</td>
+      <td>设置*addr的nr位</td>
+    </tr>
+    <tr>
+      <td>clear_bit(nr, addr)</td>
+      <td>清空*addr的nr位</td>
+    </tr>
+    <tr>
+      <td>change_bit(nr, addr)</td>
+      <td>转换*addr的nr位</td>
+    </tr>
+    <tr>
+      <td>test_and_set_bit(nr, addr)</td>
+      <td>设置*addr的nr位并返回原值</td>
+    </tr>
+    <tr>
+      <td>test_and_clear_bit(nr, addr)</td>
+      <td>清*addr的nr位并返回原值</td>
+    </tr>
+    <tr>
+      <td>test_and_change_bit(nr, addr)</td>
+      <td>转换*addr的nr位并返回原值</td>
+    </tr>
+    <tr>
+      <td>atomic_clear_mask(mask, addr)</td>
+      <td>清mask指定的*addr的所有位</td>
+    </tr>
+    <tr>
+      <td>atomic_set_mask(mask, addr)</td>
+      <td>设置mask指定的*addr的所有位</td>
+    </tr>
+  </tbody>
+</table>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>对访问RAM芯片的操作进行串行化的一种电路。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#原子操作">#原子操作</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/timing-measurement/" class="pre">&lt; 定时测量</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/time-system/" class="next">时钟和定时器电路 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments kernel_preemption内核同步_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章原子操作写于2014年04月28日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

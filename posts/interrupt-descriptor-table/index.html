@@ -1,0 +1,246 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>中断描述符表|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 中断描述符表..." name="description"/>
+  <meta content="IDT,中断描述符表," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/interrupt-descriptor-table/" />
+  <meta property="og:title" content="中断描述符表" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 中断描述符表..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">中断描述符表</div>
+
+  <div class="content interrupt中断和异常_content_css">
+    <p>中断描述符表（<em>Interrupt Descriptor Table，IDT</em>）是一个系统表，它与每一个中断或异常向量相联系，每一个向量在表中有相应地中断或异常处理程序地入口地址，内核在允许中断发生前，必须适当地初始化IDT。</p>
+
+<p>GDT和IDT地格式非常相似，表中地每一项对应一个中断或异常向量，每个向量由8个字节组成，因此，最多需要256x8=2048字节来存放IDT。<em>idtr</em>CPU寄存器使IDT可以位于内存地任何地方，它指定IDT地线性地址及其限制地最大长度。在允许中断之前，必须用<em>lidt</em>汇编指令初始化<em>idtr</em></p>
+
+<p>IDT包含三种类型地描述符：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/idt.png" alt="IDT" style="max-width:700px" /></p>
+
+<p class="center">中断描述符表</p>
+
+<p>这些描述符是：</p>
+
+<ol>
+  <li>任务门（<em>task gate</em>），当中断信号发生时，必须取代当前进程地那个进程地TSS选择符存放在任务门中。</li>
+  <li>中断门（<em>interrupt gate</em>），包含段选择符和中断或异常处理程序地段内偏移量，当控制权转移到一个适当地段时，处理器清IF标志，从而关闭将来会发生的可屏蔽中断。</li>
+  <li>陷阱门（<em>trap gate</em>），和中断门类似，只是控制权传递到一个适当地段处理器不修改IF标志。</li>
+</ol>
+
+<h3 id="section">中断和异常的硬件处理</h3>
+
+<p>假定内核已经被初始化，因此，CPU在保护模式下运行，Linux只有在刚刚启动的时候是在实模式，之后便进入保护模式。</p>
+
+<p>在执行了一条指令之后，<em>cs</em>和<em>eip</em>这对寄存器包含下一条将要执行的指令的逻辑地址，在处理了那条指令之后，控制单元会检查在运行前一条指令时是否已经发生了一个中断异或异常<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。如果发生了一个中断或者异常，那么控制单元执行下列操作：</p>
+
+<ol>
+  <li>确定与中断或异常的关联向量i。</li>
+  <li>读由<em>idtr</em>寄存器指向的IDT表中的第i项门描述符。</li>
+  <li>从<em>gdtr</em>寄存器获得GDT的基地址，并在GDT中查找，以读取IDT表项中的选择符所标识的段描述符，这个描述符指定只哦你果断或异常处理程序所在的段的基地址。</li>
+  <li>确定中断是由授权的中断发生源发出的。</li>
+  <li>检查是否发生了特权等级变化。</li>
+  <li>如果故障已经发生，用引起异常的指令地址装载<em>cs</em>和<em>eip</em>寄存器<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>，从而使这条指令能够再次被执行。</li>
+  <li>在栈中保存<em>eflags</em>、<em>cs</em>以及<em>eip</em>的内容。</li>
+  <li>如果异常产生了一个硬件出错码，则保存在栈中。</li>
+  <li>装载<em>cs</em>和<em>eip</em>寄存器，其值分别是IDT表中的第i项门描述符的段选择符和偏移量，这些值给出了中断或者异常处理程序的第一条指令的逻辑地址。</li>
+</ol>
+
+<p>控制单元所执行的最后一步就是跳转到中断或者异常处理程序，也就是说，醋栗完中断信号后，控制单元所执行的指令就是被选中处理程序的第一条指令。</p>
+
+<p>中断或异常被处理完毕后，相应的处理程序必须产生一条<em>iret</em>指令，把控制权转交给被中断的进程，这样控制单元就会产生以下操作：</p>
+
+<ol>
+  <li>用保存在栈中的值装载<em>cs</em>、<em>eip</em>或<em>eflags</em>寄存器，如果一个硬件出错码曾被押入栈中，并且在<em>eip</em>内容上面，那么执行<em>iret</em>指令必须先弹出这个硬件出错码。</li>
+  <li>检查处理程序的CPL是否等于<em>cs</em>中的最低两位的值，如果是，说明在同一特权级，<em>iret</em>中止执行，否则转入下一步。</li>
+  <li>从栈中装载<em>ss</em>和<em>esp</em>寄存器，返回到与旧特权级相关的栈。</li>
+  <li>检查<em>ds</em>、<em>es</em>、<em>fs</em>以及<em>gs</em>段寄存器的内容，如果其中一个寄存器包含的选择符是个段描述符，并且其DPL值小于CPL，那么就清除相应的段寄存器。</li>
+</ol>
+
+<h3 id="section-1">初始化中断描述符表</h3>
+
+<p>内核启用中断之前，必须把IDT表的初始地址装到<em>idtr</em>寄存器，并初始化表中的每一个项，这项工作是在初始化系统时完成的。</p>
+
+<p><em>int</em>指令允许用户态进程发出一个中断信号，其值可以时0～255的任意一个向量。因此，为了防止用户通过<em>int</em>指令模拟非法的中断和异常，IDT的初始化必须非常小心，因此可以通过把中断和陷进门描述符的DPL字段设置为0来实现。</p>
+
+<p>如果进程试图发出其中的一个中断信号，控制单元将检查出CPL的值与DPL字段有冲突，并且产生一个『General protection』异常。</p>
+
+<p>在一些少数的情况下，用户态进程必须能够发出一个编程异常，为此，只要把中断或陷阱门描述符的DPL字段设置为3，即特权级尽可能高一点就可以了。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>汇编里通常一条指令执行结束后才会产生一个异常。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>CPU执行的指令跟<em>cs</em>和<em>eip</em>有关，CPU会读取这eip寄存器的内容并找到cs寄存器里相应的地址，然后执行指令。 <a href="#fnref:2" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#IDT">#IDT</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#中断描述符表">#中断描述符表</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/exception/" class="pre">&lt; 异常定义</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/seqlock/" class="next">顺序锁 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments interrupt中断和异常_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章中断描述符表写于2014年05月04日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

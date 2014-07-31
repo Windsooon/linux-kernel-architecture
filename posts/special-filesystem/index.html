@@ -1,0 +1,279 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>特殊文件系统|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 特殊文件系统..." name="description"/>
+  <meta content="文件系统," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/special-filesystem/" />
+  <meta property="og:title" content="特殊文件系统" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 特殊文件系统..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">特殊文件系统</div>
+
+  <div class="content virtual_filesystem虚拟文件系统_content_css">
+    <p>当网络和磁盘文件系统能够使用户处理存放在内核之外的信息时，特殊文件系统可以为系统程序员和管理员提供一种容易的方式来操作内核的数据结构并实现操作系统的特殊特征。下面列出了一些特殊的文件系统，对于其中的每个文件系统，表中给出了它的安装点和简短的描述：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>名字</th>
+      <th>安装点</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>bdev</td>
+      <td>无</td>
+      <td>块设备</td>
+    </tr>
+    <tr>
+      <td>binfmt_misc</td>
+      <td>任意</td>
+      <td>其他可执行格式</td>
+    </tr>
+    <tr>
+      <td>devpts</td>
+      <td>/dev/pts</td>
+      <td>伪终端支持</td>
+    </tr>
+    <tr>
+      <td>eventpollfs</td>
+      <td>无</td>
+      <td>由有效事件轮询机制使用</td>
+    </tr>
+    <tr>
+      <td>futexfs</td>
+      <td>无</td>
+      <td>由futex机制使用</td>
+    </tr>
+    <tr>
+      <td>pipefs</td>
+      <td>无</td>
+      <td>管道</td>
+    </tr>
+    <tr>
+      <td>proc</td>
+      <td>/pros</td>
+      <td>对内核数据结构的常规访问点</td>
+    </tr>
+    <tr>
+      <td>rootfs</td>
+      <td>无</td>
+      <td>为启动阶段提供一个空的根目录</td>
+    </tr>
+    <tr>
+      <td>shm</td>
+      <td>无</td>
+      <td>IPC共享线性区</td>
+    </tr>
+    <tr>
+      <td>mqueue</td>
+      <td>任意</td>
+      <td>实现POSIX消息队列时使用</td>
+    </tr>
+    <tr>
+      <td>sockfs</td>
+      <td>无</td>
+      <td>套接字</td>
+    </tr>
+    <tr>
+      <td>sysfs</td>
+      <td>/sys</td>
+      <td>对系统数据的常规访问点</td>
+    </tr>
+    <tr>
+      <td>tmpfs</td>
+      <td>任意</td>
+      <td>临时文件<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup></td>
+    </tr>
+    <tr>
+      <td>usbfs</td>
+      <td>/proc/bus/usb</td>
+      <td>USB设备</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>有几个文件系统没有固定的安装点，这些文件系统可以由用户自由地安装和使用。此外，一些特殊文件系统根本没有安装点，它们不是用于与用户交互，但是内核可以用它们来很容易地重新使用VFS层的某些代码<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>。</p>
+
+<p>特殊文件系统不限于物理块设备，然而，内核给每个安装的特殊文件系统分配一个虚拟的块设备，让其主设备号为0而次设备号具有任意值，而每个特殊文件系统有不同的值。</p>
+
+<p><em>set_anon_super()</em>函数用于初始化特殊文件系统的超级块，这个函数本质上获得一个未使用的次设备号dev，然后用主设备号0和次设备号dev设置超级块的<em>s_dev</em>字段。而另一个<em>kill_anon_super()</em>函数移走特殊文件系统的超级块。<em>unnamed_dev_idr</em>变量包含指向一个辅助结构的指针。</p>
+
+<p>尽管有些内核设计者不喜欢虚拟块设备标识符，但是这些标识符有助于内核以统一的方式处理特殊文件系统和普通文件系统。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>如果不被交换出去就保持在RAM中。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>例如有了pipefs特殊文件系统，就可以把管道和FIFO文件以相同的方式对待。 <a href="#fnref:2" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#文件系统">#文件系统</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/dentry-cache/" class="pre">&lt; 目录项高速缓存</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/filesystem-opts/" class="next">文件系统处理 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments virtual_filesystem虚拟文件系统_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章特殊文件系统写于2014年05月18日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

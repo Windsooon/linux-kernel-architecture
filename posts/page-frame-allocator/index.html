@@ -1,0 +1,367 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>分区页框分配器|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 分区页框分配器..." name="description"/>
+  <meta content="分区,页框,页框分配器," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/page-frame-allocator/" />
+  <meta property="og:title" content="分区页框分配器" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 分区页框分配器..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">分区页框分配器</div>
+
+  <div class="content mm_manage内存管理_content_css">
+    <p>内核有一个子系统，称之为分区页框分配器（<em>zoned page frame allocator</em>），这个子系统处理对连续页框组的内存分配请求，其主要组成如下。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/page_frame_alloc.png" alt="numa" style="max-width:600px" /></p>
+
+<p class="center">内存管理区分配器示意图</p>
+
+<p>其中，管理区分配器接受动态内存分配与释放的请求，再请求分配的情况下，该部分搜索一个能满足所有请求的一组连续页框内存的管理区。在每个管理区内，页框被名为『伙伴系统』的部分来处理，为大刀更好的系统性能，一小部分页框保留在高速缓存中用于快速地满足对单个页框分配的请求。</p>
+
+<p>请求和释放页框的几个重要函数如下，如果分配成功，则返回一个分配页的线性地址，如果分配失败，则返回NULL。</p>
+
+<h3 id="section">分配页框</h3>
+
+<p>分配页框一般使用<em>alloc_pages</em>，如果分配失败则返回NULL，可以通过参数<em>gfp_mask</em>指定寻找的方法。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>函数名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>alloc_pages</td>
+      <td>申请一个连续的页框，返回第一个所分配的页框描述符的地址</td>
+    </tr>
+    <tr>
+      <td>alloc_page</td>
+      <td>用于获得一个页框的宏</td>
+    </tr>
+    <tr>
+      <td>__get__free_pages</td>
+      <td>类似于alloc_pages，但返回第一个所分配页的线性地址</td>
+    </tr>
+    <tr>
+      <td>__get_free_page</td>
+      <td>用于获得一个单独的页框的宏</td>
+    </tr>
+    <tr>
+      <td>get_zeroed_page</td>
+      <td>用来获取填满0页框的宏，返回所获取页框的线性地址</td>
+    </tr>
+    <tr>
+      <td>__get_dma_pages</td>
+      <td>用这个宏获得适用于DMA的页框</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>alloc_pages函数的完整带参数是alloc_pages(gfp_mask, order)，其中order是次方，用于请求2^order个连续的页框。gfp_mask是一组标志，它指明了如何寻找空闲的页框，gfp_mask标志如下。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>标志名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>__GFP_DMA</td>
+      <td>所请求的页框必须处于ZONE_DMA管理区</td>
+    </tr>
+    <tr>
+      <td>__GFP_HIGHMEM</td>
+      <td>所请求的页框必须处于ZONE_HIGHMEM管理区</td>
+    </tr>
+    <tr>
+      <td>__GFP_WAIT</td>
+      <td>允许内核对等待空闲页框的当前进程进行阻塞</td>
+    </tr>
+    <tr>
+      <td>__GFP_HIGH</td>
+      <td>允许内核访问保留的页框池</td>
+    </tr>
+    <tr>
+      <td>__GFP_IO</td>
+      <td>允许内核再地段内存页上执行I/O传输以释放页框</td>
+    </tr>
+    <tr>
+      <td>__GFP_FS</td>
+      <td>如果为0，则不允许内核执行依赖于文件系统的操作</td>
+    </tr>
+    <tr>
+      <td>__GFP_COLD</td>
+      <td>所请求的页框可能为冷页</td>
+    </tr>
+    <tr>
+      <td>__GFP_NOWARN</td>
+      <td>一次内存分配失败将不产生警告信息</td>
+    </tr>
+    <tr>
+      <td>__GFP_REPEAT</td>
+      <td>内核重试内存分配直到成功</td>
+    </tr>
+    <tr>
+      <td>__GFP_NOFAIL</td>
+      <td>与__GFP_REPEAT相同</td>
+    </tr>
+    <tr>
+      <td>__GFP_NORETRY</td>
+      <td>一次内存分配失败后不再重试</td>
+    </tr>
+    <tr>
+      <td>__GFP_NO_GROW</td>
+      <td>slab分配器不允许增大slab高速缓存</td>
+    </tr>
+    <tr>
+      <td>__GFP_COMP</td>
+      <td>属于扩展页的页框</td>
+    </tr>
+    <tr>
+      <td>__GFP_ZERO</td>
+      <td>返回任何的页框必须被填满0</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>实际上，Linux大多数都是用的组合值，而不是单独的某一个值。所以gfp_mask参数如下：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>标志名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>GFP_ATOMIC</td>
+      <td>__GFP_HIGH</td>
+    </tr>
+    <tr>
+      <td>GFP_NOIO</td>
+      <td>__GFP_WAIT</td>
+    </tr>
+    <tr>
+      <td>GFP_NOFS</td>
+      <td>__GFP_WAIT | __GFP_IO</td>
+    </tr>
+    <tr>
+      <td>GFP_KERNEL</td>
+      <td>__GFP_WAIT | __GFP_IO | __GFP_FS</td>
+    </tr>
+    <tr>
+      <td>GFP_USER</td>
+      <td>__GFP_WAIT | __GFP_IO | __GFP_FS</td>
+    </tr>
+    <tr>
+      <td>GFP_HIGHUSER</td>
+      <td>__GFP_WAIT | __GFP_IO | __GFP_FS | __GFP_HIGHMEM</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="section-1">释放页框</h3>
+
+<p>下面几个函数中的任何一个宏都可以释放页框，但是有细微的差别：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>函数名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>__free_pages</td>
+      <td>该函数首先检查page指向的页描述符（<em>page</em>），如果该页框未被保留，就把描述符的count字段减1，如果count变为0，就假定从page对应的页框开始的一段连续的页框不再被使用。在这种情况下，该函数释放页框。</td>
+    </tr>
+    <tr>
+      <td>free_pages</td>
+      <td>释放页框</td>
+    </tr>
+    <tr>
+      <td>__free_page</td>
+      <td>释放单个页框</td>
+    </tr>
+    <tr>
+      <td>free_page</td>
+      <td>释放单个页框</td>
+    </tr>
+  </tbody>
+</table>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#分区">#分区</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#页框">#页框</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#页框分配器">#页框分配器</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-and-page-table/" class="pre">&lt; 页表的数据结构</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/highmem/" class="next">高端内存页框的内核映射 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm_manage内存管理_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章分区页框分配器写于2014年04月19日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

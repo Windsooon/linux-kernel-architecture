@@ -1,0 +1,280 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>内存管理|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 内存管理..." name="description"/>
+  <meta content="内存,UMA,NUMA," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/mm-management/" />
+  <meta property="og:title" content="内存管理" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 内存管理..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">内存管理</div>
+
+  <div class="content basic基础_content_css">
+    <p>内存管理是Linux内核中最复杂的事情，其实Linux内核主要工作是内存管理，当然还有进程调度等，这篇只是基础，后面会根据进程调度，内存管理分章节来显示笔记<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。这里只是说说内存管理里的一些很基础的问题。</p>
+
+<h3 id="section">虚拟内存</h3>
+
+<p>所有的新的Linux系统都提供了一种有用的抽象，叫做虚拟内存（<em>virtual memory</em>）。虚拟内存作为一种逻辑层，处于应用程序的内存请求与硬件管理单元（<em>Memory Management Unit</em>，MMU）之间，虚拟内存有很多用途和优点：</p>
+
+<ol>
+  <li>若干进程可以并发地执行。</li>
+  <li>应用程序所需内存大于物理内存的时候也可以运行<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>。</li>
+  <li>程序只有部分代码装入内存时进程可以执行它。</li>
+  <li>允许每个进程访问可用物理内存的子集。</li>
+  <li>进程可以共享函数库或程序的一个单独内存映象。</li>
+  <li>程序是可重定位的，可以把程序放在物理内存的任何地方。</li>
+  <li>程序员可以编写机器无关代码，无需关系物理内存的组织结构。</li>
+</ol>
+
+<p>虚拟内存子系统的主要成分是虚拟地址空间的概念，进程所用的一组内存地址不同于物理内存地址，当进程使用一个虚拟地址时，内核和MMU协同定位其在物理内存中的实际位置。</p>
+
+<p>现在的CPU包含了能自动把虚拟地址转换成物理地址的硬件电路。为了大刀这个目标，把可用RAM划分成长度为4KB或8KB的页框，并且引入一组页表来指定虚拟地址与物理地址之间的对应关系。这些电路让内存分配变得简单。</p>
+
+<h3 id="umanuma">UMA和NUMA</h3>
+
+<p class="center"><img src="/linux-kernel-architecture/images/numa.png" alt="numa" style="max-width:600px" /></p>
+
+<p class="center">UMA和NUMA体系结构</p>
+
+<p>有两种类型的计算机，分别以不同的方法管理物理内存。</p>
+
+<p>（1）：UMA计算机（<em>一致内存访问，uniform memory access</em>）将可用内存以连续方式组织起来，系统中的每个处理器访问各个内存都是同样的块。</p>
+
+<p>（2）：NUMA计算机（<em>非一致内存访问，non uniform memory access</em>）总是多处理器计算机。系统的各个CPU都有本地内存，可支持特别快的访问，各个处理器之间通过总线连接起来。</p>
+
+<h3 id="ram">随机访问存储器 RAM</h3>
+
+<p>RAM基本上被划分为两部分，其中若干兆节用于存放内核映象，主要是内核代码和内核静态数据结构。其余部分通常由虚拟内存来处理，可能用于：</p>
+
+<ol>
+  <li>满足内核对缓冲区、描述符及其他动态内核数据结构的请求。</li>
+  <li>满足进程对一般内存区的请求及对文件内存映射的请求。</li>
+  <li>借助于告诉缓存从磁盘及其他缓冲设备获得较好的性能。</li>
+</ol>
+
+<p>虚拟内存另一个必须要解决的问题是内存碎片。理想情况下，只有页框太少，新请求的内存才能返回失败。但是有很多情况内存会产生碎片，虽然系统里有了较多的空闲内存，但可能没有连续的地址空间，则也没有足够可用的内存，不能作为一个连续的大块来使用，那么内存请求也会失败。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/mem.png" alt="system" style="max-width:300px" /></p>
+
+<p class="center">内存碎片</p>
+
+<p>如上图的第一行，有8字节的内存，当申请4字节时，可以申请成功。假设产生了一个内存碎片，继续申请，如第二步，还是可以有4字节的内存空间。如果产生了第三步那样的内存碎片，则申请4字节的内存空间会失败，因为没有连续的内存空间。</p>
+
+<p>内存碎片也是内核管理中另一个很重要的议题。</p>
+
+<h3 id="section-1">内核内存分配器</h3>
+
+<p>内核内存分配器（<em>Kernel Memory Allocator</em>，KMA）是一个子系统，尝试满足系统中所有部分对内存的请求，可以看作是一个内存操作的更高抽象。KMA需要有以下特点：</p>
+
+<ol>
+  <li>性能，速度要快。</li>
+  <li>必须把内存的浪费减少到最少。</li>
+  <li>必须努力减轻内存碎片问题。</li>
+  <li>必须能与其他内存管理子系统合作。</li>
+</ol>
+
+<p>基于不同的算法和技术，提出了几种KMA，最重要的是伙伴系统和Slab分配算法。</p>
+
+<h3 id="section-2">进程虚拟地址空间处理</h3>
+
+<p>进程的虚拟地址空间包括了进程可以引用的所有虚拟内存地址。当进程通过exec调用开始某个程序执行时，内核分配给进程的虚拟地址空间由以下内存区组成：</p>
+
+<ol>
+  <li>程序的可执行代码。</li>
+  <li>程序的初始化数据。</li>
+  <li>程序的为初始化数据。</li>
+  <li>初始程序栈。</li>
+  <li>所需共享库的可执行代码和数据。</li>
+  <li>堆。</li>
+</ol>
+
+<p>现在所有inx系统都采用了请求调页（<em>demand paging</em>）的内存分配策略。有了请求调页，进程可以在它的页还没有内存时就开始执行<sup id="fnref:3"><a href="#fn:3" class="footnote">3</a></sup>。另外还有写时复制（<em>copy on write</em>）策略。</p>
+
+<h3 id="section-3">高速缓存</h3>
+
+<p>物理内存的一大优势就是用作磁盘和其他设备的高速缓存，这是因为硬盘非常慢，磁盘的访问需要数毫秒，和RAM访问相比，太慢了。所有inx系统的策略都是，尽可能的推迟写磁盘时间。因此，从磁盘读入的内存的数据即使任何进程都不再使用，也继续保存在RAM中。</p>
+
+<p>这一策略的另一个好处是，例如在多个进程修改同一个文件时，可以不需要重复的低效的I/O操作，另一方面，也实现了并行化。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>有时候我还要自己理解了才能写笔记。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>如Firefox呵呵。 <a href="#fnref:2" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:3">
+      <p>当进程访问一个不存在的页时，MMU产生一个异常，异常处理程序找到受影响的内存区，分配一个空闲的页，并用适当的数据初始化。 <a href="#fnref:3" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#内存">#内存</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#UMA">#UMA</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#NUMA">#NUMA</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/zombie-process/" class="pre">&lt; 僵尸进程</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process/" class="next">进程、轻量级进程和线程 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments basic基础_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章内存管理写于2014年03月26日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

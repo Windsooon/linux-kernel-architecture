@@ -1,0 +1,298 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>自旋锁|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 自旋锁..." name="description"/>
+  <meta content="自旋锁,spin_lock," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/spin-lock/" />
+  <meta property="og:title" content="自旋锁" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 自旋锁..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">自旋锁</div>
+
+  <div class="content kernel_preemption内核同步_content_css">
+    <p>在同步技术中，最为广泛应用的就是加锁（<em>locking</em>）机制了。当内核控制路径必须访问共享数据结构或进入临界区时，就需要为自己获取一把『锁』。由锁机制保护的资源非常类似于限制于房间内的资源，如果某人进入房间，就把门锁上，等这个人使用完成后，后面的人才可以使用。</p>
+
+<p>当内核控制路径希望访问某个同步的资源，就需要试图获取钥匙『打开门』，当且仅当资源空闲时，它才能成功，然后，只要它还想继续使用这个资源，那么锁就会一直关闭着。当内核控制路径不再使用资源，就释放了锁，门就打开了，另一个内核控制路径就可以访问。</p>
+
+<p>自旋锁（<em>spin lock</em>）是用来在多处理环境中工作的一种特殊的锁，如果内核控制路径发现自旋锁开着，就获取锁并继续自己的执行，相反，如果内核控制路径发现锁由运行在另一个CPU上的内核控制路径『锁着』，就在周围『旋转』，反复执行一条紧密的循环指令<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>，直到锁被释放。</p>
+
+<p>自旋锁的循环指令表示『busy』，即使等待的内核控制路径无事可做，它也在CPU上保持运行。但是自旋锁非常方便，因为很多内核资源只锁1毫秒的时间片段，所以说，释放CPU和随后又获得CPU都不会消耗多少时间。</p>
+
+<p>一般来说，由自旋锁所保护的每个临界区都是禁止内核抢占的，在单处理器系统上，这种锁并不起锁的作用，自旋锁紧紧是禁止或启用内核抢占。在自旋锁等待的时候，内核抢占依旧有效，因此，等待自旋锁释放的进程有可能被更高的优先级的进程替代。</p>
+
+<p>在Linux中，每个自旋锁都用<em>spinlock_t</em>结构表示：</p>
+
+<h4 id="includelinuxspinlocktypesh">&lt;include/linux/spinlock_types.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="n">raw_spinlock_t</span> <span class="n">raw_lock</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_GENERIC_LOCKBREAK
+</span>    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">break_lock</span><span class="p">;</span>
+<span class="cp">#endif
+#ifdef CONFIG_DEBUG_SPINLOCK
+</span>    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">magic</span><span class="p">,</span> <span class="n">owner_cpu</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">owner</span><span class="p">;</span>
+<span class="cp">#endif
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+</span>    <span class="k">struct</span> <span class="n">lockdep_map</span> <span class="n">dep_map</span><span class="p">;</span>
+<span class="cp">#endif
+</span><span class="p">}</span> <span class="n">spinlock_t</span><span class="p">;</span></code></pre></div>
+
+<p>其中<em>raw_spinlock_t</em>代码为：</p>
+
+<h4 id="includelinuxspinlocktypesuph">&lt;include/linux/spinlock_types_up.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="k">volatile</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">slock</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>其中主要的两个参数为<em>slock</em>和<em>break_lock</em>，其中<em>slock</em>表示自旋锁的状态，值为1则表示『未枷锁』状态，而任何负数和0都表示已加锁的状态。而<em>break_lock</em>表示进程正在等待自旋锁<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>。</p>
+
+<p>与自旋锁有关的宏如下。</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>宏</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>spin_lock_init()</td>
+      <td>把自旋锁设置为1，未锁的状态</td>
+    </tr>
+    <tr>
+      <td>spin_lock()</td>
+      <td>循环，知道自旋锁变为1，然后把自旋锁设置为0</td>
+    </tr>
+    <tr>
+      <td>spin_unlock()</td>
+      <td>把自旋锁设置为1</td>
+    </tr>
+    <tr>
+      <td>spin_unlock_wait()</td>
+      <td>等待，直到自旋锁变为1</td>
+    </tr>
+    <tr>
+      <td>spin_is_locked()</td>
+      <td>如果自旋锁设置为1，返回0，否则返回1</td>
+    </tr>
+    <tr>
+      <td>spin_trylock()</td>
+      <td>把自旋锁设置为0，若原来锁是1，则返回1，否则为0</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="spinlock">具有内核抢占的spin_lock宏</h3>
+
+<p>自旋锁的实现和体系结构相关，也和编译时是否允许内核抢占有关，所以这个笔记就仅仅列举了逻辑，并不会找代码，代码实际上可以在<em>&lt;include/linux/spinlick.h&gt;</em>中找，内核提供了两种api接口，一个是smp api，另一个是up api。</p>
+
+<p>在支持内核抢占的情况下，这个宏会获取自旋锁的地址<em>slp</em>作为它的参数，并执行下面的操作。</p>
+
+<ol>
+  <li>调用<em>preemet_disbale()</em>禁用内核抢占。</li>
+  <li>调用函数<em>__raw_spin_trylock()</em>，它对自旋锁的<em>slock</em>字段执行原子性的测试和设置操作。</li>
+  <li>如果自旋锁中是开着的，则宏结束，内核控制路径获得自旋锁。</li>
+  <li>否则内核控制路径无法获得自旋锁，因此宏必须执行循环一直到其他CPU上运行的内核控制路路径释放自旋锁。</li>
+  <li>如果<em>break_lock</em>字段等于0，则设置为1，通过监测该字段，拥有锁并在其他CPU上运行的进程可以知道是否有其他进程在等待这个锁。</li>
+  <li>执行紧密的循环。</li>
+  <li>跳转到第一步再次试图获取自旋锁。</li>
+</ol>
+
+<h3 id="spinlock-1">非抢占式的spin_lock宏</h3>
+
+<p>如果在没有选择内核抢占的情况下，<em>spin_lock</em>所做的操作就非常不同，宏生成一个汇编语言片段，用于下面紧凑的循环<sup id="fnref:3"><a href="#fn:3" class="footnote">3</a></sup>：</p>
+
+<div class="highlight"><pre><code class="language-asm" data-lang="asm">1:  lock; decb slp-&gt;lock
+    jns  sf
+2:  pause
+    cmpb $0, slp-&gt;slock
+    jle 2b
+    mp 1b
+3:</code></pre></div>
+
+<p>汇编语言指令<em>decb</em>递减自旋锁的值，该指令是原子的，因为带有<em>lock</em>字节前缀，随后检测符号标志，如果它被清0，说明自旋锁被设置为1，因此从标记3处继续执行，否则在标签2处执行紧凑的循环直到自旋锁出现正直，然后从标签1处开始执行。</p>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>可以想象成一个简单的while(is_lock)，其中is_lock在有锁的时候为True，但逻辑不止如此简单。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>正在进行紧凑的循环来等待锁的释放。当然这个仅在CMP和内核抢占的情况下使用。 <a href="#fnref:2" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:3">
+      <p>实际上代码更加复杂。 <a href="#fnref:3" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#自旋锁">#自旋锁</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#spin_lock">#spin_lock</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/memory-fragmentation/" class="pre">&lt; 内存碎片</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/init-mm-zone-and-page/" class="next">初始化内存域和结点 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments kernel_preemption内核同步_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章自旋锁写于2014年05月02日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

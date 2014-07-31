@@ -1,0 +1,339 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>内存碎片|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 内存碎片..." name="description"/>
+  <meta content="反碎片,内存碎片,伙伴系统," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/memory-fragmentation/" />
+  <meta property="og:title" content="内存碎片" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 内存碎片..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">内存碎片</div>
+
+  <div class="content mm_manage内存管理_content_css">
+    <p>虽然伙伴系统的让内存管理变得简单，但是会造成另外一个问题，就是内存碎片。内存碎片是非常重要的问题因为如果长期占用不同大小的内存产生了内存碎片，则在申请内存的时候会引发缺页异常，但是实际上，依旧有很多的空闲的内存可供使用。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/memory-fragmentation.png" alt="system" style="max-width:500px" /></p>
+
+<p>正如上图所示，上图有非常多的剩余空间，但因为内存碎片的问题，当系统需要申请4个内存页的时候，就无法申请内存了，虽然我们的内存空间里剩余内存的数量远远大于4个内存页，但无法找到连续的4个内存页，则会产生一个缺页异常。</p>
+
+<p>而对于理想情况下的内存而言，应该如下图中的图例所示，对于一个程序，在其可用的内存地址空间内，不应该存在大片的不连续的内存，应该说，对于应用程序看到的内存区而言，总应该是连续的。</p>
+
+<p>我们谈到内存碎片的时候，大多数只涉及到内核，因为对于内核而言，内存碎片确实是一个非常大的问题。虽然大多数现代的CPU都提供了巨型的页使用，但解决内存碎片依旧对内存使用密集型的应用程序有好处。在使用更大的页的时候，地址转换后备缓冲器只需处理较少的项，降低了TLB缓存失效的可能性。但巨型页的分配依旧需要连续的空闲物理内存。</p>
+
+<h3 id="section">反碎片</h3>
+
+<p>在2.6.24版本开发中，防止碎片的方法最终加入到内核，内核认为预防比治疗更加有效，所以内核使用<strong>反碎片</strong>（<em>anti-fragmentation</em>）的方法试图从最开始尽可能的防止碎片。</p>
+
+<p>内核已经将已分配的页划分为以下3种类型：</p>
+
+<ol>
+  <li>不可移动的页：在内存中有固定位置，不能移动到其他地方，例如内核。</li>
+  <li>可回收的页：不能直接移动，但可以删除，其内容可以从某些源重新生成，例如映射自文件系统的数据。</li>
+  <li>可移动的页：可以随意地移动，属于用户空间和应用程序的页属于这个类别，它们是通过页表映射的，如果它们复制到新的位置，页表项可以相应的更新，而不会影响到应用程序。</li>
+</ol>
+
+<p>页的可移动性依赖页属于以上3种类别中的哪一种，内核使用的反碎片技术基于将具有相同可移动性分组的思想。也就是说可移动的页和可移动的页具有相同的分组，相同，不可移动的页和不可移动的页具有相同的分组。</p>
+
+<p>但要注意的是，从最初开始，内存并未划分成可移动页等不同移动性的不同的区，这些是在运行时行程的，内核的另一种方法确实将内存划分为不同的区，分别用于可移动页和不可移动页的分配。</p>
+
+<p>内核使用一些宏来表示不同的迁移类型：</p>
+
+<h4 id="includelinuxmmzoneh">&lt;include/linux/mmzone.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define MIGRATE_UNMOVABLE     0
+#define MIGRATE_RECLAIMABLE   1
+#define MIGRATE_MOVABLE       2
+#define MIGRATE_PCPTYPES      3
+#define MIGRATE_RESERVE       3
+#define MIGRATE_ISOLATE       4 </span><span class="cm">/* can't allocate from here */</span><span class="cp">
+#define MIGRATE_TYPES         5</span></code></pre></div>
+
+<p>其中变量的意义如下：</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>MIGRATE_UNMOVABLE</td>
+      <td>不可移动内存区</td>
+    </tr>
+    <tr>
+      <td>MIGRATE_RECLAIMABLE</td>
+      <td>可回收内存区</td>
+    </tr>
+    <tr>
+      <td>MIGRATE_MOVABLE</td>
+      <td>可移动内存区</td>
+    </tr>
+    <tr>
+      <td>MIGRATE_PCPTYPES</td>
+      <td>在PCP列表上类型的数量</td>
+    </tr>
+    <tr>
+      <td>MIGRATE_RESERVE</td>
+      <td>如果向具有特定的内存区的内存分配失败，则可以从此内存区分配内存</td>
+    </tr>
+    <tr>
+      <td>MIGRATE_ISOLATE</td>
+      <td>不能通过这个区域申请内存，这是一个特殊的虚拟区域，用于跨越NUMA结点移动物理内存页。</td>
+    </tr>
+    <tr>
+      <td>MIGRATE_TYPES</td>
+      <td>代表迁移类型的数目，不代表具体的区域</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>对伙伴系统数据结构的主要调整，是将空闲列表分解为<em>MIGRATE_TYPES</em>个列表：</p>
+
+<h4 id="includelinuxmmzoneh-1">&lt;include/linux/mmzone.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">free_area</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">free_list</span><span class="p">[</span><span class="n">MIGRATE_TYPES</span><span class="p">];</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">nr_free</span><span class="p">;</span>
+<span class="p">};</span></code></pre></div>
+
+<p>其中<em>nr_free</em>统计了所有页表上空闲页的数目，而每种迁移类型都对应一个空闲列表。如果内核无法满足针对某一给定迁移类型的分配请求，则内核提供了一个备用列表，指定了列表中无法满足分配请求时，接下来使用哪种迁移类型。</p>
+
+<h4 id="mmpageallocc">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kt">int</span> <span class="n">fallbacks</span><span class="p">[</span><span class="n">MIGRATE_TYPES</span><span class="p">][</span><span class="n">MIGRATE_TYPES</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="p">[</span><span class="n">MIGRATE_UNMOVABLE</span><span class="p">]</span>   <span class="o">=</span> <span class="p">{</span> <span class="n">MIGRATE_RECLAIMABLE</span><span class="p">,</span>
+                              <span class="n">MIGRATE_MOVABLE</span><span class="p">,</span>
+                              <span class="n">MIGRATE_RESERVE</span> <span class="p">},</span>
+    <span class="p">[</span><span class="n">MIGRATE_RECLAIMABLE</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span> <span class="n">MIGRATE_UNMOVABLE</span><span class="p">,</span>
+                              <span class="n">MIGRATE_MOVABLE</span><span class="p">,</span>
+                              <span class="n">MIGRATE_RESERVE</span> <span class="p">},</span>
+    <span class="p">[</span><span class="n">MIGRATE_MOVABLE</span><span class="p">]</span>     <span class="o">=</span> <span class="p">{</span> <span class="n">MIGRATE_RECLAIMABLE</span><span class="p">,</span>
+                              <span class="n">MIGRATE_UNMOVABLE</span><span class="p">,</span>
+                              <span class="n">MIGRATE_RESERVE</span> <span class="p">},</span>
+    <span class="p">[</span><span class="n">MIGRATE_RESERVE</span><span class="p">]</span>     <span class="o">=</span> <span class="p">{</span> <span class="n">MIGRATE_RESERVE</span><span class="p">,</span>
+                              <span class="n">MIGRATE_RESERVE</span><span class="p">,</span>
+                              <span class="n">MIGRATE_RESERVE</span> <span class="p">},</span> <span class="cm">/* Never used */</span>
+<span class="p">};</span></code></pre></div>
+
+<p>在内核想要分配不同的移动页时，如果对应链表为空，则后退到可回收页链表，接下来再到可移动页链表，最后到紧急分配链表。</p>
+
+<h3 id="section-1">虚拟可移动内存区</h3>
+
+<p>依据可移动性组织页是防止物理内存碎片的一种可能方法，内核还提供了另一种组织该问题的手段，虚拟内存域<em>ZONE_MOVABLE</em>。这个机制和可移动性分组框架相比，<em>ZONE_MOVABLE</em>必须由管理员显式激活。</p>
+
+<p><em>ZONE_MOVABLE</em>的基本思想很简单，可用的物理内存划分为两个内存域，一个用于可移动分配，一个用于不可移动分配。这会自动防止不可移动页向可移动内存域引入碎片。</p>
+
+<p>不过这也会造成另一个问题，内存如何在两个竞争的区域之间分配可用内存？这显然对内核要求太高，所以管理员必须做出决定。这个数据结构是我们非常熟悉的<em>zone_type</em>数据结构。</p>
+
+<h4 id="includelinuxmmzoneh-2">&lt;include/linux/mmzone.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">enum</span> <span class="n">zone_type</span> <span class="p">{</span>
+<span class="cp">#ifdef CONFIG_ZONE_DMA
+</span>    <span class="n">ZONE_DMA</span><span class="p">,</span>
+<span class="cp">#endif
+#ifdef CONFIG_ZONE_DMA32
+</span>    <span class="n">ZONE_DMA32</span><span class="p">,</span>
+<span class="cp">#endif
+</span>    <span class="n">ZONE_NORMAL</span><span class="p">,</span>
+<span class="cp">#ifdef CONFIG_HIGHMEM
+</span>    <span class="n">ZONE_HIGHMEM</span><span class="p">,</span>
+<span class="cp">#endif
+</span>    <span class="n">ZONE_MOVABLE</span><span class="p">,</span>
+    <span class="n">__MAX_NR_ZONES</span>
+<span class="p">};</span></code></pre></div>
+
+<p>取决于体系结构和配置，其中<em>ZONE_MOVABLE</em>可能位于任何区域，甚至是高端内存区域。与系统中其他的内存区相反，<em>ZONE_MOVABLE</em>从不关联到任何硬件上有意义的内存范围，实际上，该内存域中的内存取自高端内存域或者是普通内存域，所以<em>ZONE_MOVABLE</em>是一个虚拟内存域。</p>
+
+<p>从物理内存域中提取多少内存用于<em>ZONE_MOVABLE</em>必须考虑下面的情况：</p>
+
+<ol>
+  <li>用于不可移动分配的内存会平均分布到所有的内存节点上。</li>
+  <li>只使用来自最高内存域的内存<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。</li>
+</ol>
+
+<p>以上情况所起到的结果是：</p>
+
+<ol>
+  <li>用于为虚拟内存域ZONE_MOVABLE提取内存页的物理内存域，保存在全局变量<em>movable_zone</em>中。</li>
+  <li>对每个节点来说，<em>zone_movable_pfn[node_id]</em>表示<em>ZONE_MOVABLE</em>在<em>movable_zone</em>内存域中所取得内存的起始地址。</li>
+</ol>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>在32位系统上，这可能是ZONE_HIGHMEM，但对于64系统，可能是ZONE_NORMAL或ZONE_DMA32。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#反碎片">#反碎片</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#内存碎片">#内存碎片</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#伙伴系统">#伙伴系统</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/buddy-system-struct/" class="pre">&lt; 伙伴系统的结构</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/spin-lock/" class="next">自旋锁 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm_manage内存管理_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章内存碎片写于2014年05月02日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

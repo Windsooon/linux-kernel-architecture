@@ -1,0 +1,395 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>进程复制|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 clone()、fork()以及vfork()..." name="description"/>
+  <meta content="clone,fork,vfork,写时复制,do_fork,copy_process,pidhash," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/clone-fork-and-vfork/" />
+  <meta property="og:title" content="进程复制" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 clone()、fork()以及vfork()..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">进程复制</div>
+
+  <div class="content process进程_content_css">
+    <p>系统进程复制通常使用clone()、fork()以及vfork()系统调用。</p>
+
+<p>这里只针对这几个函数做了少量的笔记，实际上在原书中有大量的细节讲解。建议打开<em>&lt;kernel/fork.c&gt;</em>和原书中的解析一一对比。这里仅仅是笔记，我认为比较有价值的部分。如果不感兴趣，可以跳过，只要知道有这几种创建进程的方式即可。</p>
+
+<p>在Linux中，轻量级进程是由clone()函数创建的，这个函数使用下列参数。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>fn</td>
+      <td>指定一个由新进程执行的函数，当这个函数返回时，子进程终止。函数返回一个整数，表示子进程的退出代码</td>
+    </tr>
+    <tr>
+      <td>arg</td>
+      <td>指向传递给fn()函数的数据</td>
+    </tr>
+    <tr>
+      <td>flags</td>
+      <td>低字节指定子进程结束时发送到父进程的信号代码，通常为SIGCHLD信号</td>
+    </tr>
+    <tr>
+      <td>child_stack</td>
+      <td>表示把用户态堆栈指针赋给子进程esp寄存器。调用进程应该总时为子进程分配新的堆栈。</td>
+    </tr>
+    <tr>
+      <td>tls</td>
+      <td>表示线程局部存储段TLS数据结构的地址，该结构时为新轻量级进程定义的，只有在CLONE_SETTLE标志被设置时才有意义</td>
+    </tr>
+    <tr>
+      <td>ptid</td>
+      <td>表示父进程的用户态变量地址，该父进程具有与新轻量级进程相同的PID，只有在CLONE_PARENT_SETTID标志被设置时才有意义</td>
+    </tr>
+    <tr>
+      <td>ctid</td>
+      <td>表示新轻量级进程的用户态变量地址，该进程具有这一类进程的PID，只有在CLONE_CHILD_SETTID标志被设置时才有意义</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>实际上，clone()是在C语言库中定义的一个封装函数，它负责建立新轻量级进程的堆栈并且调用对编程者隐藏的clone()系统调用。实现clone()系统调用的sys_clone()服务里程没有fn和arg参数。</p>
+
+<p>封装函数把fn指针存放在子进程堆栈的某个位置处，该位置就是该封装函数本身返回地址存放的位置。<em>arg</em>指针正好存放在子进程堆栈中<em>fn</em>的下面，当封装函数结束时，CPU从堆栈中取出返回地址，然后执行<em>fn(arg)</em>函数。</p>
+
+<p>传统的fork()系统调用时在Linux中是用clone()实现的，其中clone()的flags参数指定为SIGCHLD信号及所有清0的clone标志，而它的child_stack参数是父进程当前的堆栈指针。因此，父进程和子进程暂时共享同一个用户堆栈。而由于写时复制技术，当任何一个进程试图改变栈，则立即各自得到用户堆栈的一份拷贝。</p>
+
+<h3 id="dofork">do_fork()函数</h3>
+
+<p>do_fork()函数负责处理clone()、fork()和vfork()系统调用，也就是说，无论是clone()、fork()还是vfork()，都会调用do_fork()函数。其参数列表如下：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>clone_flags</td>
+      <td>与clone()函数的flag参数相同</td>
+    </tr>
+    <tr>
+      <td>stack_start</td>
+      <td>与clone()函数的child_stack参数相同</td>
+    </tr>
+    <tr>
+      <td>regs</td>
+      <td>指向通用寄存器值的指针，通用寄存器的值是在从用户态切换到内核态时被保存到内核态堆栈中的</td>
+    </tr>
+    <tr>
+      <td>stack_size</td>
+      <td>未使用，总是被设置为0</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>函数的原型如下：</p>
+
+<h4 id="kernelforkc">&lt;kernel/fork.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">long</span> <span class="n">do_fork</span><span class="p">(</span><span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">clone_flags</span><span class="p">,</span>
+          <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">stack_start</span><span class="p">,</span>
+          <span class="k">struct</span> <span class="n">pt_regs</span> <span class="o">*</span><span class="n">regs</span><span class="p">,</span>
+          <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">stack_size</span><span class="p">,</span>
+          <span class="kt">int</span> <span class="n">__user</span> <span class="o">*</span><span class="n">parent_tidptr</span><span class="p">,</span>
+          <span class="kt">int</span> <span class="n">__user</span> <span class="o">*</span><span class="n">child_tidptr</span><span class="p">){</span>
+<span class="p">}</span></code></pre></div>
+
+<p>所有的3个fork机制都调用了do_fork这个与体系结构无关的函数，代码流程图如下：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/do_fork.png" alt="system" style="max-width:600px" /></p>
+
+<p>其中执行了下列操作：</p>
+
+<p>通过查找pidmap_array位图，为子进程分配新的PID。然后检查父进程的ptrace字段，如果它的值不等于0，说明有另外一个进程正在跟踪父进程，因而，do_fork()检查debugger程序是否自己想跟踪子进程。如果子进程不是内核线程，那么do_fork()设置CLONE_PTRACE标志。</p>
+
+<p>调用copy_process()复制进程描述符，需要所有资源都是可用的，并返回进程描述符地址。</p>
+
+<p>如果设置了CLONE_STOPPED标志，或者必须跟踪子进程，则子进程的状态设置为TASK_STOPPED，否则，调用<em>wake_up_new_task()</em>函数执行。</p>
+
+<p>如果设置了CLONE_VFORK标志，则把父进程插入等待队列，并挂起父进程直到子进程释放自己的内存地址空间<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。</p>
+
+<p>其中一个重要的函数是<em>copy_process</em>。</p>
+
+<h4 id="kernelforkc-1">&lt;kernel/fork.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="n">copy_process</span><span class="p">(</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">clone_flags</span><span class="p">,</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">stack_start</span><span class="p">,</span>
+    <span class="k">struct</span> <span class="n">pt_regs</span> <span class="o">*</span><span class="n">regs</span><span class="p">,</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">stack_size</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">__user</span> <span class="o">*</span><span class="n">child_tidptr</span><span class="p">,</span>
+    <span class="k">struct</span> <span class="n">pid</span> <span class="o">*</span><span class="n">pid</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">trace</span><span class="p">){</span>
+<span class="p">}</span></code></pre></div>
+
+<p>函数流程图如下：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/copy_process.png" alt="system" style="max-width:300px" /></p>
+
+<p>该函数执行下列操作：</p>
+
+<p>检查参数clone_flags锁传递的标志的一致性，在某种情况下会返回错误代号。没有问题，通过调用<em>security_task_create()</em>以及<em>security_task_alloc()</em>执行所有附加的安全检查。完成后调用<em>dup_task_struct()</em>为子进程获取进程描述符，检查<a href="/linux-kernel-architecture/2014/03/30/process-descriptor/">资源限制</a>并递增计数器，更新PID并存入<em>tsk-&gt;pid</em>字段。复制/共享进程的各个部分代码包括拷贝文件，命名空间。然后初始化进程的亲子关系。</p>
+
+<p>完成后执行SET_LINK宏，把新进程描述符插入进程链表。调用<em>attach_pid()</em>把新进程描述符的PID插入到pidhash散列表。经过一系列繁琐的检查和线程组操作后返回进程描述符指针。</p>
+
+<p>其中『复制/共享进程的各个部分代码包括拷贝文件，命名空间』相关的处理代码如下：</p>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">if</span> <span class="p">((</span><span class="n">retval</span> <span class="o">=</span> <span class="n">audit_alloc</span><span class="p">(</span><span class="n">p</span><span class="p">)))</span>
+    <span class="k">goto</span> <span class="n">bad_fork_cleanup_policy</span><span class="p">;</span>
+<span class="cm">/* copy all the process information */</span>
+<span class="k">if</span> <span class="p">((</span><span class="n">retval</span> <span class="o">=</span> <span class="n">copy_semundo</span><span class="p">(</span><span class="n">clone_flags</span><span class="p">,</span> <span class="n">p</span><span class="p">)))</span>
+    <span class="k">goto</span> <span class="n">bad_fork_cleanup_audit</span><span class="p">;</span>
+<span class="k">if</span> <span class="p">((</span><span class="n">retval</span> <span class="o">=</span> <span class="n">copy_files</span><span class="p">(</span><span class="n">clone_flags</span><span class="p">,</span> <span class="n">p</span><span class="p">)))</span>
+    <span class="k">goto</span> <span class="n">bad_fork_cleanup_semundo</span><span class="p">;</span>
+<span class="k">if</span> <span class="p">((</span><span class="n">retval</span> <span class="o">=</span> <span class="n">copy_fs</span><span class="p">(</span><span class="n">clone_flags</span><span class="p">,</span> <span class="n">p</span><span class="p">)))</span>
+    <span class="k">goto</span> <span class="n">bad_fork_cleanup_files</span><span class="p">;</span>
+<span class="k">if</span> <span class="p">((</span><span class="n">retval</span> <span class="o">=</span> <span class="n">copy_sighand</span><span class="p">(</span><span class="n">clone_flags</span><span class="p">,</span> <span class="n">p</span><span class="p">)))</span>
+    <span class="k">goto</span> <span class="n">bad_fork_cleanup_fs</span><span class="p">;</span>
+<span class="k">if</span> <span class="p">((</span><span class="n">retval</span> <span class="o">=</span> <span class="n">copy_signal</span><span class="p">(</span><span class="n">clone_flags</span><span class="p">,</span> <span class="n">p</span><span class="p">)))</span>
+    <span class="k">goto</span> <span class="n">bad_fork_cleanup_sighand</span><span class="p">;</span>
+<span class="k">if</span> <span class="p">((</span><span class="n">retval</span> <span class="o">=</span> <span class="n">copy_mm</span><span class="p">(</span><span class="n">clone_flags</span><span class="p">,</span> <span class="n">p</span><span class="p">)))</span>
+    <span class="k">goto</span> <span class="n">bad_fork_cleanup_signal</span><span class="p">;</span>
+<span class="k">if</span> <span class="p">((</span><span class="n">retval</span> <span class="o">=</span> <span class="n">copy_namespaces</span><span class="p">(</span><span class="n">clone_flags</span><span class="p">,</span> <span class="n">p</span><span class="p">)))</span>
+    <span class="k">goto</span> <span class="n">bad_fork_cleanup_mm</span><span class="p">;</span>
+<span class="k">if</span> <span class="p">((</span><span class="n">retval</span> <span class="o">=</span> <span class="n">copy_io</span><span class="p">(</span><span class="n">clone_flags</span><span class="p">,</span> <span class="n">p</span><span class="p">)))</span>
+    <span class="k">goto</span> <span class="n">bad_fork_cleanup_namespaces</span><span class="p">;</span></code></pre></div>
+
+<p>其中部分拷贝的意义分别为：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>copy_semundo</td>
+      <td>如果COPY_SYSVSEM置位，则使用父进程的System V信号量</td>
+    </tr>
+    <tr>
+      <td>copy_fs</td>
+      <td>如果CLONE_FILES置位，则使用父进程的文件描述符，否则创建新的files结构，其中包含的信息与父进程相同。该信息的修改可以独立于原结构</td>
+    </tr>
+    <tr>
+      <td>copy_sighand</td>
+      <td>如果CLONE_THREAD置位，则使用父进程的信号处理程序</td>
+    </tr>
+    <tr>
+      <td>copy_signal</td>
+      <td>如果CLONE_THREAD置位，则与父进程共同使用信号处理中不特定于处理程序的部分</td>
+    </tr>
+    <tr>
+      <td>copy_mm</td>
+      <td>如果COPY_MM置位，则让父进程和子进程共享同一地址空间</td>
+    </tr>
+    <tr>
+      <td>copy_namespace</td>
+      <td>有特别的调用语意，建立于子进程的命名空间</td>
+    </tr>
+    <tr>
+      <td>copy_thread</td>
+      <td>这是一个特定于体系结构的函数，用于复制进程中特定于线程的数据</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>这里的特定于线程并不是指某个CLONE标志，也不是指操作堆线程而非整个进程执行。其语意无非是指复制执行上下午中特定于体系结构的所有数据。</p>
+
+<p>重要的是填充<em>task_struct-&gt;thread</em>的各个成员，这是一个<em>thread_struct</em>类型的结构，其定义是体系结构相关的，需要深入了解各种CPU的相关知识。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>vfork设计用于子进程形成后立即执行<em>execve</em>系统调用，在子进程退出或开始新程序之前，父进程处于堵塞状态。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#clone">#clone</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#fork">#fork</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#vfork">#vfork</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#写时复制">#写时复制</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#do_fork">#do_fork</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#copy_process">#copy_process</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#pidhash">#pidhash</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/the-kernel-thread/" class="pre">&lt; 内核线程</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/execve-replace-process/" class="next">进程替换 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments process进程_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章进程复制写于2014年04月11日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

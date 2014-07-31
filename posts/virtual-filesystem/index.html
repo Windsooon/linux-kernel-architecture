@@ -1,0 +1,235 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>虚拟文件系统|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 虚拟文件系统..." name="description"/>
+  <meta content="文件系统,VFS," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/virtual-filesystem/" />
+  <meta property="og:title" content="虚拟文件系统" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 虚拟文件系统..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">虚拟文件系统</div>
+
+  <div class="content virtual_filesystem虚拟文件系统_content_css">
+    <p>Linux是具有与其他操作系统和谐共存的能力，可以透明地安装具有其他操作系统文件格式的磁盘或分区，这些操作系统如Windows或者其他Unix。通过所谓的虚拟文件系统的概念，Linux使用与其他Unix变体相同的方式设法支持多重文件系统类型。</p>
+
+<p>虚拟文件系统所隐含的思想是把表示很多不同种类的文件系统的共同信息放入内核，其中有一个字段或函数来支持Linux所支持的所有实际文件系统所提供的任何操作。读所调用的每个读、写或其他函数，内核都能把它们替换成支持本地Linux文件系统，NTFS文件系统，或者文件所在的任何其他文件系统的实际函数。</p>
+
+<p>虚拟文件系统（<em>Virtual Filesystem</em>）也可以称之为虚拟文件系统换换（<em>Virtual Filesystem Switch，VFS</em>），是一个内核软件层，用来处理与Unix标准文件系统相关的所有系统调用，其表现为能为各种文件系统提供一个通用的接口。</p>
+
+<p>假设一个用户拷贝一个文件，例如：</p>
+
+<pre><code>cp /floopy/TEST /tmp/test
+</code></pre>
+
+<p>其中<em>/floopy</em>是MS-DOS磁盘的一个安装点，而<em>/tmp</em>是一个标准的Ext文件系统的目录。如下图所示：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/vfs.png" alt="vfs" style="max-width:300px" /></p>
+
+<p class="center">一个简单的VFS架构</p>
+
+<p>VFS支持的文件系统可以划分为三类。</p>
+
+<p><strong>磁盘文件系统</strong></p>
+
+<p>这些文件系统管理在本地磁盘分区中可用的存储空间或其他可以起到磁盘作用的设备<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>，VFS支持的基于磁盘的某些文件系统还有：</p>
+
+<ol>
+  <li>Linux使用的文件系统，例如Ext2，现在最新使用的文件系统是Ext4。</li>
+  <li>Unix家族的文件系统，如sysv、MINIX文件系统以及VERITAS VxFS文件系统。</li>
+  <li>Miscrosoft文件系统。</li>
+  <li>ISO9660 CD-ROM文件系统和通用磁盘格式DVD文件系统。</li>
+  <li>其他有专利权的文件系统哦女孩，如HPFS、HFS、AFFS以及ADFS文件系统。</li>
+  <li>起源于非Linux系统的其他日志文件系统，如IBM的JFS和SGI的XFS文件系统。</li>
+</ol>
+
+<p><strong>网络文件系统</strong></p>
+
+<p>这些文件系统允许轻易地访问属于其他网络计算机的文件系统所包含的文件，虚拟文件系统所支持的一些著名的网络文件系统有：NFS、Coda、AFS、CIFS等文件系统。</p>
+
+<p><strong>特殊文件系统</strong></p>
+
+<p>这些文件系统不管理本地或者远程磁盘空间，/proc文件系统是特殊文件系统的一个典型范例。</p>
+
+<p>由于我看的书的原因，记录的更多的是Ext2和Ext3文件系统，但依旧会看Ext4文件系统并记录一些笔记。所以今后笔记中的Linux文件系统就不指明是第几代Ext文件系统，统称为Ext文件系统。</p>
+
+<p>Unix的目录建立了一颗根目录为『/』的树，根目录包含在根文件系统（<em>root filesystem</em>）中，在Linux中这个根文件系统通常是Ext类型，其他所有的文件系统都可以被安装在根文件系统的子目录里。</p>
+
+<p>当一个文件系统被安装在某一个目录上时，在父文件系统中的目录内容不再是可访问的，因为任何路径，甚至包括安装点，都将引用已安装的文件系统。但是，当被安装文件系统卸载之后，原目录的内容又可以再现。这种Unix文件系统的特点可以由系统管理员用来隐藏文件，因为只需要把一个文件系统安装在要隐藏文件的目录中即可。</p>
+
+<p>基于磁盘的文件系统通常存放在硬件块设备中，如磁盘、软盘或者CD-ROM。Linux VFS的一个有用的特点是能够处理<em>/dev/loop0</em>这样的虚拟块设备，这种设备可以用来安装普通文件所在的文件系统。作为一种可能的应用，用户可以保护自己的私有文件系统，这可以通过把自己文件系统的加密版本存放在一个普通文件中来实现。</p>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>比如说一个USB闪存。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#文件系统">#文件系统</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#VFS">#VFS</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/init-slab/" class="pre">&lt; slab初始化</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/common-file-model/" class="next">通用文件模型 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments virtual_filesystem虚拟文件系统_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章虚拟文件系统写于2014年05月11日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

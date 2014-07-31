@@ -1,0 +1,553 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>不连续页的分配|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 不连续页的分配..." name="description"/>
+  <meta content="不连续页,内存," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/vmalloc/" />
+  <meta property="og:title" content="不连续页的分配" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 不连续页的分配..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">不连续页的分配</div>
+
+  <div class="content mm_manage内存管理_content_css">
+    <p>如果内核能够找到连续的页，那是最好的，这样分配和释放都会比较简单，但是真实的系统里情况往往不是那么简单。在分配一大块内存时，可能竭尽全力也无法找到连续的内存块，在用户空间中这不是问题，因为普通进程设计为使用处理器的分页机制，当然这也会降低速度并占用TLB。</p>
+
+<p>在内核中页可以使用相同的技术，内核分配了其虚拟地址空间的一部分用于建立连续映射。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/vmalloc.png" alt="vmalloc" style="max-width:500px" /></p>
+
+<p class="center">vmalloc区域</p>
+
+<p>每个vmalloc分配的子区域都是自包含的，与其他vmalloc子区域通过一个内存页分隔，类似于直接映射和vmalloc区域之间的边界，不同vmalloc子区域之间的分隔也是为防止不正确的内存访问操作。这种情况只会因为内核故障出现，应该通过系统错误信息报告，而不是允许内核其他部分的数据被暗中修改，因为分隔是在虚拟地址空间中建立的，不会浪费物理内存页。</p>
+
+<p>vmalloc是一个接口函数，内核代码使用它来分配在虚拟内存中连续但在物理内存中不一定连续的内存。</p>
+
+<h4 id="includelinuxvmalloch">&lt;include/linux/vmalloc.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">void</span> <span class="o">*</span><span class="n">vmalloc</span><span class="p">(</span><span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">size</span><span class="p">);</span></code></pre></div>
+
+<p>这个函数只需要一个参数，用于指定所需内存区的长度，不过其长度单位不是页而是字节，这在用户空间程序的设计中是很普遍的。</p>
+
+<p>使用vmalloc的最著名的实例是内核对模块的实现，因为模块可以在任何时候加载，如果模块数据比较多，那么无法保证有足够的连续内存可用，特别是在系统已经运行了比较长时间的情况下。如果能够用小块内存拼接出足够的内存，那么就可以使用vmalloc。</p>
+
+<p>因为用于vmalloc的内存页总是必须映射在内核地址空间中，因此使用ZONE_HIGHMEM内存域的页要优于其他内存域，这使得内核可以节省更宝贵的较地段内存域又不会带来额外的坏处。所以，vmalloc是内核出于自身的目的使用高端内存页的少数情况之一。</p>
+
+<p>内核在管理虚拟内存中的vmalloc区域时，必须跟踪哪些子区域被使用，哪些是空闲的，所以定义了一个<em>vm_struct</em>的数据结构，并将所有使用的部分保存在一个链表中。</p>
+
+<h4 id="includelinuxvmalloch-1">&lt;include/linux/vmalloc.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">vm_struct</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">vm_struct</span>    <span class="o">*</span><span class="n">next</span><span class="p">;</span>
+    <span class="kt">void</span>                <span class="o">*</span><span class="n">addr</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">size</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">flags</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">page</span>         <span class="o">**</span><span class="n">pages</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">nr_pages</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">phys_addr</span><span class="p">;</span>
+    <span class="kt">void</span>                <span class="o">*</span><span class="n">caller</span><span class="p">;</span>
+<span class="p">};</span></code></pre></div>
+
+<p>其中字段的意义如下：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>next</td>
+      <td>链表的下一个元素</td>
+    </tr>
+    <tr>
+      <td>addr</td>
+      <td>定义了分配的子区域在虚拟地址空间的起始地址</td>
+    </tr>
+    <tr>
+      <td>size</td>
+      <td>表示了该区域的长度</td>
+    </tr>
+    <tr>
+      <td>flags</td>
+      <td>存储了与该内存区关联的标志集合，用于指定内存区的类型</td>
+    </tr>
+    <tr>
+      <td>pages</td>
+      <td>是一个指针，指向page指针的数组，每个数组成员都表示一个映射到虚拟地址空间中的物理内存页的page的实例</td>
+    </tr>
+    <tr>
+      <td>nr_pages</td>
+      <td>指定pages中数组的项目数</td>
+    </tr>
+    <tr>
+      <td>phys_addr</td>
+      <td>映射了由物理地址描述的物理内存区</td>
+    </tr>
+    <tr>
+      <td>caller</td>
+      <td>调用的对象</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>其中flags的常用字段及其意义如下：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>VM_IOREMAP</td>
+      <td>表示几乎随机的物理内存区映射到vmalloc去雨中，这是一个特定于体系结构的操作</td>
+    </tr>
+    <tr>
+      <td>VM_ALLOC</td>
+      <td>指定由vmalloc产生的子区域</td>
+    </tr>
+    <tr>
+      <td>VM_MAP</td>
+      <td>用于表示将现存的pages集合映射到连续的虚拟地址空间中</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>使用vmalloc的话，那么我们可以看到的结构如下：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/vmalloc_struct.png" alt="vmalloc" style="max-width:500px" /></p>
+
+<p class="center">vmalloc内存页映射物理内存</p>
+
+<p>内核提供了辅助函数<em>get_vm_area</em>充当<em>__get_vm_area</em>的前端，负责参数的准备工作。而<em>__get_vm_area</em>函数实际上是<em>__get_vm_area_node</em>函数的前端，这个函数负责在vmalloc空间中找到一个合适的位置，代码如下：</p>
+
+<h4 id="includelinuxvmalloch-2">&lt;include/linux/vmalloc.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="k">struct</span> <span class="n">vm_struct</span> <span class="o">*</span><span class="nf">__get_vm_area_node</span><span class="p">(</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">size</span><span class="p">,</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">align</span><span class="p">,</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">flags</span><span class="p">,</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">start</span><span class="p">,</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">end</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">node</span><span class="p">,</span> <span class="n">gfp_t</span> <span class="n">gfp_mask</span><span class="p">,</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">caller</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">static</span> <span class="k">struct</span> <span class="n">vmap_area</span> <span class="o">*</span><span class="n">va</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">vm_struct</span> <span class="o">*</span><span class="n">area</span><span class="p">;</span>
+
+    <span class="n">BUG_ON</span><span class="p">(</span><span class="n">in_interrupt</span><span class="p">());</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">VM_IOREMAP</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kt">int</span> <span class="n">bit</span> <span class="o">=</span> <span class="n">fls</span><span class="p">(</span><span class="n">size</span><span class="p">);</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">bit</span> <span class="o">&gt;</span> <span class="n">IOREMAP_MAX_ORDER</span><span class="p">)</span>
+            <span class="n">bit</span> <span class="o">=</span> <span class="n">IOREMAP_MAX_ORDER</span><span class="p">;</span>
+        <span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="n">bit</span> <span class="o">&lt;</span> <span class="n">PAGE_SHIFT</span><span class="p">)</span>
+            <span class="n">bit</span> <span class="o">=</span> <span class="n">PAGE_SHIFT</span><span class="p">;</span>
+
+        <span class="n">align</span> <span class="o">=</span> <span class="mi">1ul</span> <span class="o">&lt;&lt;</span> <span class="n">bit</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="n">size</span> <span class="o">=</span> <span class="n">PAGE_ALIGN</span><span class="p">(</span><span class="n">size</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="o">!</span><span class="n">size</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+
+    <span class="n">area</span> <span class="o">=</span> <span class="n">kzalloc_node</span><span class="p">(</span><span class="k">sizeof</span><span class="p">(</span><span class="o">*</span><span class="n">area</span><span class="p">),</span>
+        <span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">GFP_RECLAIM_MASK</span><span class="p">,</span> <span class="n">node</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="o">!</span><span class="n">area</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+
+    <span class="cm">/*
+     * 在这里总是分配一个警戒页作为安全间隙用来保护
+     */</span>
+    <span class="n">size</span> <span class="o">+=</span> <span class="n">PAGE_SIZE</span><span class="p">;</span>
+
+    <span class="c1">//start代表VMALLOC_START
+</span>    <span class="c1">//end代表VMALLOC_END
+</span>    <span class="n">va</span> <span class="o">=</span> <span class="n">alloc_vmap_area</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">align</span><span class="p">,</span>
+            <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="n">node</span><span class="p">,</span> <span class="n">gfp_mask</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">IS_ERR</span><span class="p">(</span><span class="n">va</span><span class="p">))</span> <span class="p">{</span>
+        <span class="n">kfree</span><span class="p">(</span><span class="n">area</span><span class="p">);</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">VM_UNLIST</span><span class="p">)</span>
+        <span class="n">setup_vmalloc_vm</span><span class="p">(</span><span class="n">area</span><span class="p">,</span> <span class="n">va</span><span class="p">,</span> <span class="n">flags</span><span class="p">,</span> <span class="n">caller</span><span class="p">);</span>
+    <span class="k">else</span>
+        <span class="n">insert_vmalloc_vm</span><span class="p">(</span><span class="n">area</span><span class="p">,</span> <span class="n">va</span><span class="p">,</span> <span class="n">flags</span><span class="p">,</span> <span class="n">caller</span><span class="p">);</span>
+
+    <span class="k">return</span> <span class="n">area</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>如果找到了合适的区域就返回，如果没有就返回NULL指针，<em>remove_vm_area</em>函数将区域从vmalloc地址空间中删除，代码如下：</p>
+
+<h4 id="includelinuxvmalloch-3">&lt;include/linux/vmalloc.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">vm_struct</span> <span class="o">*</span><span class="nf">remove_vm_area</span><span class="p">(</span><span class="k">const</span> <span class="kt">void</span> <span class="o">*</span><span class="n">addr</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">vmap_area</span> <span class="o">*</span><span class="n">va</span><span class="p">;</span>
+
+    <span class="n">va</span> <span class="o">=</span> <span class="n">find_vmap_area</span><span class="p">((</span><span class="kt">unsigned</span> <span class="kt">long</span><span class="p">)</span><span class="n">addr</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">va</span> <span class="o">&amp;&amp;</span> <span class="n">va</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">VM_VM_AREA</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">struct</span> <span class="n">vm_struct</span> <span class="o">*</span><span class="n">vm</span> <span class="o">=</span> <span class="n">va</span><span class="o">-&gt;</span><span class="k">private</span><span class="p">;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">vm</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">VM_UNLIST</span><span class="p">))</span> <span class="p">{</span>
+            <span class="k">struct</span> <span class="n">vm_struct</span> <span class="o">*</span><span class="n">tmp</span><span class="p">,</span> <span class="o">**</span><span class="n">p</span><span class="p">;</span>
+            <span class="cm">/*
+             * 在unmap之前从列表中移除这个内存区并且禁止访问
+             */</span>
+            <span class="n">write_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vmlist_lock</span><span class="p">);</span>
+            <span class="k">for</span> <span class="p">(</span><span class="n">p</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">vmlist</span><span class="p">;</span> <span class="p">(</span><span class="n">tmp</span> <span class="o">=</span> <span class="o">*</span><span class="n">p</span><span class="p">)</span> <span class="o">!=</span> <span class="n">vm</span><span class="p">;</span> <span class="n">p</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">tmp</span><span class="o">-&gt;</span><span class="n">next</span><span class="p">)</span>
+                <span class="p">;</span>
+            <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="n">tmp</span><span class="o">-&gt;</span><span class="n">next</span><span class="p">;</span>
+            <span class="n">write_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">vmlist_lock</span><span class="p">);</span>
+        <span class="p">}</span>
+
+        <span class="n">vmap_debug_free_range</span><span class="p">(</span><span class="n">va</span><span class="o">-&gt;</span><span class="n">va_start</span><span class="p">,</span> <span class="n">va</span><span class="o">-&gt;</span><span class="n">va_end</span><span class="p">);</span>
+        <span class="n">free_unmap_vmap_area</span><span class="p">(</span><span class="n">va</span><span class="p">);</span>
+        <span class="n">vm</span><span class="o">-&gt;</span><span class="n">size</span> <span class="o">-=</span> <span class="n">PAGE_SIZE</span><span class="p">;</span>
+        <span class="c1">// 返回内存区域
+</span>        <span class="k">return</span> <span class="n">vm</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>在了解了查找vmalloc内存区和移除内存区之后，就可以开始分配内存区。<em>vmalloc</em>函数发起对不连续内存区的分配操作，不过这个函数只是调用了<em>__vmalloc</em>并且提供了一些初始化的参数，然后就走到了<em>__vmalloc_node</em>。代码如下：</p>
+
+<h4 id="includelinuxvmalloch-4">&lt;include/linux/vmalloc.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kt">void</span> <span class="o">*</span><span class="nf">__vmalloc_node</span><span class="p">(</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">size</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">align</span><span class="p">,</span>
+    <span class="n">gfp_t</span> <span class="n">gfp_mask</span><span class="p">,</span> <span class="n">pgprot_t</span> <span class="n">prot</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">node</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">caller</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">vm_struct</span> <span class="o">*</span><span class="n">area</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">addr</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">real_size</span> <span class="o">=</span> <span class="n">size</span><span class="p">;</span>
+
+    <span class="n">size</span> <span class="o">=</span> <span class="n">PAGE_ALIGN</span><span class="p">(</span><span class="n">size</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">size</span> <span class="o">||</span> <span class="p">(</span><span class="n">size</span> <span class="o">&gt;&gt;</span> <span class="n">PAGE_SHIFT</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">totalram_pages</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+
+    <span class="cm">/* 查找是否能找到一个空闲的页 */</span>
+    <span class="n">area</span> <span class="o">=</span> <span class="n">__get_vm_area_node</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">align</span><span class="p">,</span> <span class="n">VM_ALLOC</span> <span class="o">|</span> <span class="n">VM_UNLIST</span><span class="p">,</span>
+                  <span class="n">VMALLOC_START</span><span class="p">,</span> <span class="n">VMALLOC_END</span><span class="p">,</span> <span class="n">node</span><span class="p">,</span>
+                  <span class="n">gfp_mask</span><span class="p">,</span> <span class="n">caller</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">area</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+
+    <span class="cm">/* 物理内存区的分配 */</span>
+    <span class="n">addr</span> <span class="o">=</span> <span class="n">__vmalloc_area_node</span><span class="p">(</span><span class="n">area</span><span class="p">,</span> <span class="n">gfp_mask</span><span class="p">,</span> <span class="n">prot</span><span class="p">,</span> <span class="n">node</span><span class="p">,</span> <span class="n">caller</span><span class="p">);</span>
+
+    <span class="cm">/*
+     * 插入最新分配的内存页到链表中
+     */</span>
+    <span class="n">insert_vmalloc_vmlist</span><span class="p">(</span><span class="n">area</span><span class="p">);</span>
+
+    <span class="cm">/*
+     * 3是需要的，因为__get_vm_area_node函数创建的
+     * vm_struct和vmap_area对象包含
+     * 虚拟分配的虚拟地址
+     */</span>
+    <span class="n">kmemleak_alloc</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">real_size</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="n">gfp_mask</span><span class="p">);</span>
+
+    <span class="k">return</span> <span class="n">addr</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>可以看到通过<em>__get_vm_area_node</em>函数查找是否有空闲的内存区域，如果存在，那么就从物理内存中分配各个页，然后将这些页连续地映射到vmalloc区域中，分配虚拟内存的工作就完成了。</p>
+
+<p>其中最为重要的就是<em>__vmalloc_area_node</em>函数，这个函数的作用是进行物理内存区的分配，代码如下：</p>
+
+<h4 id="includelinuxvmalloch-5">&lt;include/linux/vmalloc.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kt">void</span> <span class="o">*</span><span class="nf">__vmalloc_area_node</span><span class="p">(</span>
+    <span class="k">struct</span> <span class="n">vm_struct</span> <span class="o">*</span><span class="n">area</span><span class="p">,</span> <span class="n">gfp_t</span> <span class="n">gfp_mask</span><span class="p">,</span>
+    <span class="n">pgprot_t</span> <span class="n">prot</span><span class="p">,</span> <span class="kt">int</span> <span class="n">node</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">caller</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* 进行安全性检查 */</span>
+    <span class="k">struct</span> <span class="n">page</span> <span class="o">**</span><span class="n">pages</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">nr_pages</span><span class="p">,</span> <span class="n">array_size</span><span class="p">,</span> <span class="n">i</span><span class="p">;</span>
+
+    <span class="n">nr_pages</span> <span class="o">=</span> <span class="p">(</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">size</span> <span class="o">-</span> <span class="n">PAGE_SIZE</span><span class="p">)</span> <span class="o">&gt;&gt;</span> <span class="n">PAGE_SHIFT</span><span class="p">;</span>
+    <span class="n">array_size</span> <span class="o">=</span> <span class="p">(</span><span class="n">nr_pages</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="p">));</span>
+
+    <span class="n">area</span><span class="o">-&gt;</span><span class="n">nr_pages</span> <span class="o">=</span> <span class="n">nr_pages</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">array_size</span> <span class="o">&gt;</span> <span class="n">PAGE_SIZE</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">pages</span> <span class="o">=</span> <span class="n">__vmalloc_node</span><span class="p">(</span><span class="n">array_size</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span>
+                <span class="n">gfp_mask</span> <span class="o">|</span> <span class="n">__GFP_ZERO</span><span class="p">,</span>
+                <span class="n">PAGE_KERNEL</span><span class="p">,</span> <span class="n">node</span><span class="p">,</span> <span class="n">caller</span><span class="p">);</span>
+        <span class="n">area</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">|=</span> <span class="n">VM_VPAGES</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="n">pages</span> <span class="o">=</span> <span class="n">kmalloc_node</span><span class="p">(</span><span class="n">array_size</span><span class="p">,</span>
+                <span class="p">(</span><span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">GFP_RECLAIM_MASK</span><span class="p">)</span> <span class="o">|</span> <span class="n">__GFP_ZERO</span><span class="p">,</span>
+                <span class="n">node</span><span class="p">);</span>
+    <span class="p">}</span>
+    <span class="n">area</span><span class="o">-&gt;</span><span class="n">pages</span> <span class="o">=</span> <span class="n">pages</span><span class="p">;</span>
+    <span class="n">area</span><span class="o">-&gt;</span><span class="n">caller</span> <span class="o">=</span> <span class="n">caller</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">pages</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">remove_vm_area</span><span class="p">(</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">addr</span><span class="p">);</span>
+        <span class="n">kfree</span><span class="p">(</span><span class="n">area</span><span class="p">);</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="cm">/* 循环遍历整个区域的所有页 */</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">area</span><span class="o">-&gt;</span><span class="n">nr_pages</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">;</span>
+
+        <span class="cm">/* 
+         * node&lt;0表示没有显式地分配页帧的结点
+         */</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">node</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+            <span class="c1">//从当前结点分配
+</span>            <span class="n">page</span> <span class="o">=</span> <span class="n">alloc_page</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">);</span>
+        <span class="k">else</span>
+            <span class="c1">//从指定的结点分配
+</span>            <span class="n">page</span> <span class="o">=</span> <span class="n">alloc_pages_node</span><span class="p">(</span><span class="n">node</span><span class="p">,</span> <span class="n">gfp_mask</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="o">!</span><span class="n">page</span><span class="p">))</span> <span class="p">{</span>
+            <span class="cm">/* 成功分配了i个页，在__vunmap()中释放它们 */</span>
+            <span class="n">area</span><span class="o">-&gt;</span><span class="n">nr_pages</span> <span class="o">=</span> <span class="n">i</span><span class="p">;</span>
+            <span class="k">goto</span> <span class="n">fail</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="n">area</span><span class="o">-&gt;</span><span class="n">pages</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">page</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">map_vm_area</span><span class="p">(</span><span class="n">area</span><span class="p">,</span> <span class="n">prot</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">pages</span><span class="p">))</span>
+        <span class="k">goto</span> <span class="n">fail</span><span class="p">;</span>
+    <span class="k">return</span> <span class="n">area</span><span class="o">-&gt;</span><span class="n">addr</span><span class="p">;</span>
+
+<span class="nl">fail:</span>
+    <span class="n">vfree</span><span class="p">(</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">addr</span><span class="p">);</span>
+    <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>分配的页从相关结点的伙伴系统中移除，在调用时，vmalloc将<em>gfp_mask</em>设置为<em>GFP_KERNEL | __GFP_HIGHMEM</em>，内核通过该才输指示内存管理子系统尽可能的从<em>ZONE_HIGHMEM</em>内存域分配页帧。理由时地段内存域的页帧更为宝贵，不应该浪费到vmalloc的分配中。</p>
+
+<p>从伙伴系统分配内存时，是逐页分配，而不是一次分配一大块，是因为在vmalloc中，如果缺陷可以分配连续的内存区域，那就没有必要使用vmalloc，毕竟这个函数的所有目的就在于分配大的内存块，因为尽管因为内存碎片的缘故，内存块中的页帧可能不是连续的。将分配单位拆的越小，即便在严重的内存碎片的物理内存的情况下，也是可以正常分配的。</p>
+
+<p>有两个函数用于向内核释放内存，<em>vfree</em>用于释放<em>vmalloc</em>和<em>vmalloc_32</em>分配的区域，而<em>vunmap</em>用于释放由<em>vmap</em>和<em>ioremap</em>创建的映射，不过这两个函数都会调用到<em>__vunmap</em>。</p>
+
+<h4 id="includelinuxvmalloch-6">&lt;include/linux/vmalloc.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kt">void</span> <span class="nf">__vunmap</span><span class="p">(</span><span class="k">const</span> <span class="kt">void</span> <span class="o">*</span><span class="n">addr</span><span class="p">,</span> <span class="kt">int</span> <span class="n">deallocate_pages</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">vm_struct</span> <span class="o">*</span><span class="n">area</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">addr</span><span class="p">)</span>
+        <span class="k">return</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">((</span><span class="n">PAGE_SIZE</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="kt">unsigned</span> <span class="kt">long</span><span class="p">)</span><span class="n">addr</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">WARN</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">KERN_ERR</span> <span class="s">"Trying to vfree() bad address (%p)</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span>
+            <span class="n">addr</span><span class="p">);</span>
+        <span class="k">return</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="c1">// 获得内存域
+</span>    <span class="n">area</span> <span class="o">=</span> <span class="n">remove_vm_area</span><span class="p">(</span><span class="n">addr</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="o">!</span><span class="n">area</span><span class="p">))</span> <span class="p">{</span>
+        <span class="n">WARN</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">KERN_ERR</span> <span class="s">"Trying to vfree() "</span>\
+            <span class="s">"nonexistent vm area (%p)</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span>
+            <span class="n">addr</span><span class="p">);</span>
+        <span class="k">return</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="n">debug_check_no_locks_freed</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">area</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">);</span>
+    <span class="n">debug_check_no_obj_freed</span><span class="p">(</span><span class="n">addr</span><span class="p">,</span> <span class="n">area</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">deallocate_pages</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
+        <span class="c1">// 遍历所有内存区的页，并且归还给伙伴系统
+</span>        <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">area</span><span class="o">-&gt;</span><span class="n">nr_pages</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+            <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span> <span class="o">=</span> <span class="n">area</span><span class="o">-&gt;</span><span class="n">pages</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
+
+            <span class="n">BUG_ON</span><span class="p">(</span><span class="o">!</span><span class="n">page</span><span class="p">);</span>
+            <span class="n">__free_page</span><span class="p">(</span><span class="n">page</span><span class="p">);</span>
+        <span class="p">}</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">VM_VPAGES</span><span class="p">)</span>
+            <span class="n">vfree</span><span class="p">(</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">pages</span><span class="p">);</span>
+        <span class="k">else</span>
+            <span class="n">kfree</span><span class="p">(</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">pages</span><span class="p">);</span>
+    <span class="p">}</span>
+    <span class="c1">// 删除内核的用来管理内存域的数据结构
+</span>    <span class="n">kfree</span><span class="p">(</span><span class="n">area</span><span class="p">);</span>
+    <span class="k">return</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>这个函数的<em>addr</em>表示要释放区域的起始地址，<em>deallocate_pages</em>指定了是否将与该区域相关的物理内存返回给伙伴系统。<em>vfree</em>将<em>deallocate_pages</em>参数的值设置为1，而<em>vunmap</em>设置为0。</p>
+
+<p>释放内存不需要给出释放区域的长度，因为长度可以从<em>vmlist</em>中的信息中了解到，<em>unmap_vm_area</em>使用找到的<em>vm_area</em>实例，从页表中删除不再需要的项，这个函数需要操作各级页表，但删除一个项，该函数还会更新CPU高速缓存。</p>
+
+<p>如果<em>deallocate_pages</em>设置为1，那么内核会遍历<em>area-&gt;pages</em>的所有元素，然后对每一项调用<em>__free_page</em>，将内存释放到伙伴系统。</p>
+
+<p>在释放完内存区域的页之后，最后还必须释放用于管理内存区的内核数据结构。</p>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#不连续页">#不连续页</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#内存">#内存</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/kernel-semaphore/" class="pre">&lt; 内核信号量</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/working-on-interrupt/" class="next">中断处理 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm_manage内存管理_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章不连续页的分配写于2014年05月06日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

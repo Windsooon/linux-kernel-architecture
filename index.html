@@ -1,0 +1,663 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Linux Kernel Architecture 内核笔记|内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <meta content="linux kernel architecture 内核笔记 Linux Kernel Architecture 内核笔记" name="description"/>
+  <meta content="linux,kernel,architecture,Linux,Kernel,Architecture,内核,笔记" name="keywords"/>
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+
+
+    <div class="posts">
+    <div class="title">文件系统处理</div>
+    <div class="content">
+    <p>就像每个传统的Unix系统一样，Linux也使用系统的根文件系统，它由内核在引导阶段直接安装，并拥有系统初始化脚本以及最基本的系统程序。</p>
+
+<p>其他文件系统要么由初始化脚本安装，要么由用户直接安装在已安装文件系统的目录上。作为一个目录树，每个文件系统豆邮自己的根目录（<em>root directory</em>）。安装文件系统的这个目录称之为安装点（<em>mount point</em>）已安装文件系统属于安装点目录的一个子文件系统。例如<em>/proc</em>虚拟文件系统是系统的根文件系统的孩子。已安装文件系统的根目录隐藏了父文件系统的安装点目录原来的内容，而且父文件系统的整个子树位于安装点之下。</p>
+
+<h3 id="section">命名空间</h3>
+
+<p>在传统的Unix系统中，只有一个已安装文件系统树，从系统的根文件系统开始，每个进程通过指定合适的路径名可以访问已安装文件系统中的任何文件。从这个方面考虑，Linux更加精确：即每个进程可拥有自己的已安装文件系统树，叫做进程的命名空间。</p>
+
+<p>通常大多数进程共享一个命名空间，即位于系统的根文件系统且被<em>init</em>进程使用的已安装文件系统数，不过，如果<em>clone()</em>系统调用以<em>CLONE_NEWNS</em>标志创建一个新进程，那么进程将获取一个新的命名空间。这个新的命名空间随后由子进程继承。</p>
+
+<p>当进程安装或卸载一个文件系统时，仅修改它的命名空间。因此，所做的修改对共享同一命名空间的所有进程都是可见的，并且也只对它们可见。进程甚至可通过使用Linux特有的<em>pivot_root()</em>系统调用来改变它的命名空间的根文件系统。</p>
+
+<h3 id="section-1">文件系统的安装</h3>
+
+<p>在大多数传统的Unix内核中，每个文件只能安装一次，并且使用<em>mount</em>命令安装。在使用<em>umount</em>命令卸载该文件系统前，所有其他作用于之前挂载的文件系统的命令都会失效。</p>
+
+<p>但是Linux有所不同，同一个文件系统被安装多次时可能的，当然，如果一个文件系统被安装了n次，那么它的根目录就可以通过n个安装点来访问。尽管同一个文件系统可以通过不同的安装点来访问，但是文件系统的确时唯一的，因此，不管一个文件系统被安装了多少次，都只有一个超级块对象。</p>
+
+<p>把多个安装堆叠在一个单独的安装点上也是允许的，尽管已经使用先前安装下的文件和目录的进程可以继续使用，但在同一安装点上的新安装隐藏前一个安装的文件系统。当最顶层的安装被删除时，下一层的安装再一次变为可见。</p>
+
+<p>但这个时候跟踪已安装的文件系统会变得非常困难。对于每一个安装操作，内核必须在内存中保存安装点和安装标志，以及要安装文件系统与其他已安装文件系统之间的关系。这样的信息保存在已安装文件系统的描述符中，每个描述符时一个<em>vfsmount</em>类型的数据结构。</p>
+
+<h4 id="includelinuxmounth">&lt;include/linux/mount.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">vfsmount</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">mnt_hash</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">vfsmount</span> <span class="o">*</span><span class="n">mnt_parent</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="n">mnt_mountpoint</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="n">mnt_root</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="n">mnt_sb</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">mnt_mounts</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">mnt_child</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">mnt_flags</span><span class="p">;</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">mnt_devname</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">mnt_list</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">mnt_expire</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">mnt_share</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">mnt_slave_list</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">mnt_slave</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">vfsmount</span> <span class="o">*</span><span class="n">mnt_master</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">mnt_namespace</span> <span class="o">*</span><span class="n">mnt_ns</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">mnt_id</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">mnt_group_id</span><span class="p">;</span>
+    <span class="n">atomic_t</span> <span class="n">mnt_count</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">mnt_expiry_mark</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">mnt_pinned</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">mnt_ghosts</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_SMP
+</span>    <span class="kt">int</span> <span class="o">*</span><span class="n">mnt_writers</span><span class="p">;</span>
+<span class="cp">#else
+</span>    <span class="kt">int</span> <span class="n">mnt_writers</span><span class="p">;</span>
+<span class="cp">#endif
+</span><span class="p">};</span></code></pre></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>mnt_hash</td>
+      <td>用于散列链表的指针</td>
+    </tr>
+    <tr>
+      <td>mnt_parent</td>
+      <td>指向父文件系统，这个文件系统安装在其上</td>
+    </tr>
+    <tr>
+      <td>mnt_mountpoint</td>
+      <td>指向这个文件系统安装点目录的dentry</td>
+    </tr>
+    <tr>
+      <td>mnt_root</td>
+      <td>指向这个文件系统根目录的dentry</td>
+    </tr>
+    <tr>
+      <td>mnt_sb</td>
+      <td>指向这个文件系统的超级块对象</td>
+    </tr>
+    <tr>
+      <td>mnt_mounts</td>
+      <td>包含所有文件系统描述符链表的头</td>
+    </tr>
+    <tr>
+      <td>mnt_child</td>
+      <td>用于已安装文件系统链表mnt_mounts的指针</td>
+    </tr>
+    <tr>
+      <td>mnt_count</td>
+      <td>引用计数器</td>
+    </tr>
+    <tr>
+      <td>mnt_flags</td>
+      <td>标志</td>
+    </tr>
+    <tr>
+      <td>mnt_expiry_mark</td>
+      <td>文件系统是否到期</td>
+    </tr>
+    <tr>
+      <td>mnt_devname</td>
+      <td>设备文件名</td>
+    </tr>
+    <tr>
+      <td>mnt_list</td>
+      <td>已安装文件系统描述符的namespace链表的指针</td>
+    </tr>
+    <tr>
+      <td>mnt_fslink</td>
+      <td>具体文件系统到期链表指针</td>
+    </tr>
+    <tr>
+      <td>mnt_ns</td>
+      <td>指向安装了文件系统的进程命名空间的指针</td>
+    </tr>
+    <tr>
+      <td>mnt_share</td>
+      <td>共享装载</td>
+    </tr>
+    <tr>
+      <td>mnt_master</td>
+      <td>从属装载</td>
+    </tr>
+    <tr>
+      <td>mnt_slave</td>
+      <td>从/子装载</td>
+    </tr>
+    <tr>
+      <td>mnt_slave_list</td>
+      <td>从/子装载的链表的头</td>
+    </tr>
+    <tr>
+      <td>mnt_id</td>
+      <td>装载的id</td>
+    </tr>
+    <tr>
+      <td>mnt_group_id</td>
+      <td>装载的组id</td>
+    </tr>
+  </tbody>
+</table>
+
+    </div>
+
+    </div>
+    
+        <hr>
+        <div class="eof">EOF</div>
+        <hr>
+        <h3><strong>阅读更多:</strong></h3><br>
+    
+
+
+
+    
+    <div class="title justtitle"><a href="/linux-kernel-architecture/posts/special-filesystem/">特殊文件系统</a></div>
+    
+
+
+
+    
+    <div class="title justtitle"><a href="/linux-kernel-architecture/posts/dentry-cache/">目录项高速缓存</a></div>
+    
+
+
+
+    
+    <div class="title justtitle"><a href="/linux-kernel-architecture/posts/dentry-object/">目录项对象</a></div>
+    
+
+
+
+    
+    <div class="title justtitle"><a href="/linux-kernel-architecture/posts/file-object/">文件对象</a></div>
+    
+
+
+
+    
+    <div class="title justtitle"><a href="/linux-kernel-architecture/posts/slab-free/">slab释放</a></div>
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+    
+
+
+
+</div>
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>
+

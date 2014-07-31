@@ -1,0 +1,379 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>释放页|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 释放页..." name="description"/>
+  <meta content="释放页,伙伴系统," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/mm-release/" />
+  <meta property="og:title" content="释放页" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 释放页..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">释放页</div>
+
+  <div class="content mm_manage内存管理_content_css">
+    <p>__free_page是一个基础函数，用于实现内核API中所有涉及内存释放的函数，其代码流程图如下所示：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/free_page.png" alt="free_page" style="max-width:500px" /></p>
+
+<p class="center">释放页流程图</p>
+
+<p>__free_page首先判断所需释放的内存是单页还是较大的内存块，如果是释放单页，那么就不必给交换给伙伴系统，而是置于per-CPU缓存中，对很可能出现在CPU高速缓存的页，则置放到热页的列表中。出于这个目的，内核提供了<em>free_hot_page</em>辅助函数，代码如下：</p>
+
+<h4 id="mmpageallocc">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">void</span> <span class="nf">free_hot_page</span><span class="p">(</span><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">trace_mm_page_free_direct</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+    <span class="n">free_hot_cold_page</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+<span class="p">}</span></code></pre></div>
+
+<p>可以看出，<em>free_hot_page</em>只不过是做了一个参数转换，实际上调用的是<em>free_hot_cold_page</em>，代码如下。</p>
+
+<h4 id="mmpageallocc-1">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kt">void</span> <span class="nf">free_hot_cold_page</span><span class="p">(</span><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">,</span> <span class="kt">int</span> <span class="n">cold</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* 获取页的内存域 */</span>
+    <span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">zone</span> <span class="o">=</span> <span class="n">page_zone</span><span class="p">(</span><span class="n">page</span><span class="p">);</span>
+    <span class="cm">/* 获取per cpu的页的列表 */</span>
+    <span class="k">struct</span> <span class="n">per_cpu_pages</span> <span class="o">*</span><span class="n">pcp</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">flags</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">migratetype</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">wasMlocked</span> <span class="o">=</span> <span class="n">__TestClearPageMlocked</span><span class="p">(</span><span class="n">page</span><span class="p">);</span>
+
+    <span class="n">kmemcheck_free_shadow</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">PageAnon</span><span class="p">(</span><span class="n">page</span><span class="p">))</span>
+        <span class="n">page</span><span class="o">-&gt;</span><span class="n">mapping</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="cm">/* 检查是否能够释放页，也在这个文件中
+     * 判断条件例如page-&gt;mapping不为空
+     * 并且page的引用不为0之类
+     * 就不释放这个页
+    */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">free_pages_check</span><span class="p">(</span><span class="n">page</span><span class="p">))</span>
+        <span class="k">return</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">PageHighMem</span><span class="p">(</span><span class="n">page</span><span class="p">))</span> <span class="p">{</span>
+        <span class="n">debug_check_no_locks_freed</span><span class="p">(</span><span class="n">page_address</span><span class="p">(</span><span class="n">page</span><span class="p">),</span> <span class="n">PAGE_SIZE</span><span class="p">);</span>
+        <span class="n">debug_check_no_obj_freed</span><span class="p">(</span><span class="n">page_address</span><span class="p">(</span><span class="n">page</span><span class="p">),</span> <span class="n">PAGE_SIZE</span><span class="p">);</span>
+    <span class="p">}</span>
+    <span class="n">arch_free_page</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+    <span class="n">kernel_map_pages</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+
+    <span class="cm">/* 获得per-CPU缓存中的页 */</span>
+    <span class="n">pcp</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">zone_pcp</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">get_cpu</span><span class="p">())</span><span class="o">-&gt;</span><span class="n">pcp</span><span class="p">;</span>
+    <span class="n">migratetype</span> <span class="o">=</span> <span class="n">get_pageblock_migratetype</span><span class="p">(</span><span class="n">page</span><span class="p">);</span>
+    <span class="n">set_page_private</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+    <span class="cm">/* 置本地IRQ标志位 */</span>
+    <span class="n">local_irq_save</span><span class="p">(</span><span class="n">flags</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">wasMlocked</span><span class="p">))</span>
+        <span class="n">free_page_mlock</span><span class="p">(</span><span class="n">page</span><span class="p">);</span>
+    <span class="n">__count_vm_event</span><span class="p">(</span><span class="n">PGFREE</span><span class="p">);</span>
+
+    <span class="cm">/*
+     * 只针对unmovable、reclaimable和movable的pcp列表中的页进行处理
+     * 而ISOLATE的页作为movable的页返回或者释放给分配器
+     */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">migratetype</span> <span class="o">&gt;=</span> <span class="n">MIGRATE_PCPTYPES</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">migratetype</span> <span class="o">==</span> <span class="n">MIGRATE_ISOLATE</span><span class="p">))</span> <span class="p">{</span>
+            <span class="n">free_one_page</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">page</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+            <span class="k">goto</span> <span class="n">out</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="n">migratetype</span> <span class="o">=</span> <span class="n">MIGRATE_MOVABLE</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* 我们可以看到上面穿过来的参数cold为0，则不是冷页 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">cold</span><span class="p">)</span>
+        <span class="n">list_add_tail</span><span class="p">(</span><span class="o">&amp;</span><span class="n">page</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">pcp</span><span class="o">-&gt;</span><span class="n">lists</span><span class="p">[</span><span class="n">migratetype</span><span class="p">]);</span>
+    <span class="k">else</span>
+        <span class="n">list_add</span><span class="p">(</span><span class="o">&amp;</span><span class="n">page</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">pcp</span><span class="o">-&gt;</span><span class="n">lists</span><span class="p">[</span><span class="n">migratetype</span><span class="p">]);</span>
+    <span class="n">pcp</span><span class="o">-&gt;</span><span class="n">count</span><span class="o">++</span><span class="p">;</span>
+    <span class="cm">/* 如果per-CPU缓存中页的数目超过了pcp-count
+     * 则将数量为pcp-&gt;batch的一批内存还给伙伴系统
+     */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">pcp</span><span class="o">-&gt;</span><span class="n">count</span> <span class="o">&gt;=</span> <span class="n">pcp</span><span class="o">-&gt;</span><span class="n">high</span><span class="p">)</span> <span class="p">{</span>
+        <span class="cm">/* 用于还回给伙伴系统 */</span>
+        <span class="n">free_pcppages_bulk</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">pcp</span><span class="o">-&gt;</span><span class="n">batch</span><span class="p">,</span> <span class="n">pcp</span><span class="p">);</span>
+        <span class="n">pcp</span><span class="o">-&gt;</span><span class="n">count</span> <span class="o">-=</span> <span class="n">pcp</span><span class="o">-&gt;</span><span class="n">batch</span><span class="p">;</span>
+    <span class="p">}</span>
+
+<span class="nl">out:</span>
+    <span class="n">local_irq_restore</span><span class="p">(</span><span class="n">flags</span><span class="p">);</span>
+    <span class="n">put_cpu</span><span class="p">();</span>
+<span class="p">}</span></code></pre></div>
+
+<p>如果释放多个页，那么<em>__free_pages</em>最终还是会到<em>__free_one_page</em>函数，这个函数不仅仅处理单页的释放，页处理复合页的释放。</p>
+
+<p>这个函数是释放内存的最重要的函数，相关内存区被添加到伙伴系统中适当的<em>free_area</em>列表，在释放伙伴时，该函数将其合并为一个连续的内存区，放置到高一阶的<em>free_area</em>列表中，如果还能合并一个进一步的伙伴的话，那么就继续重复进行合并。这个过程会一直重复下去直到没有任何伙伴可以合并。</p>
+
+<p>如何知道一个伙伴对的两个部分都位于空闲页的列表中，还需要更近一步的判断，使用<em>__page_find_buddy</em>函数，代码如下。</p>
+
+<h4 id="mmpageallocc-2">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span>
+<span class="nf">__page_find_buddy</span><span class="p">(</span><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">,</span>
+<span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">page_idx</span><span class="p">,</span>
+<span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">order</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">buddy_idx</span> <span class="o">=</span> <span class="n">page_idx</span> <span class="o">^</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">order</span><span class="p">);</span>
+
+    <span class="k">return</span> <span class="n">page</span> <span class="o">+</span> <span class="p">(</span><span class="n">buddy_idx</span> <span class="o">-</span> <span class="n">page_idx</span><span class="p">);</span>
+<span class="p">}</span></code></pre></div>
+
+<p>其中伙伴页索引的计算方法为页的index^(1左移order)。^运算符表示按位异或操作。<em>__find_combined_index</em>函数用于找到合并之后的页索引。</p>
+
+<h4 id="mmpageallocc-3">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="kt">unsigned</span> <span class="kt">long</span>
+<span class="nf">__find_combined_index</span><span class="p">(</span><span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">page_idx</span><span class="p">,</span>
+<span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">order</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">page_idx</span> <span class="o">&amp;</span> <span class="o">~</span><span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">order</span><span class="p">));</span>
+<span class="p">}</span></code></pre></div>
+
+<p>根据伙伴系统页索引信息，并不一定能够判断两个页属伙伴，内核还必须确保伙伴的页都是空闲的，使用<em>page_is_buddy</em>函数：</p>
+
+<h4 id="mmpageallocc-4">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="kt">int</span> <span class="nf">page_is_buddy</span><span class="p">(</span><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">,</span>
+    <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">buddy</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">order</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* buddy是否合法 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">pfn_valid_within</span><span class="p">(</span><span class="n">page_to_pfn</span><span class="p">(</span><span class="n">buddy</span><span class="p">)))</span>
+        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="cm">/* 页的内存域是否相同 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">page_zone_id</span><span class="p">(</span><span class="n">page</span><span class="p">)</span> <span class="o">!=</span> <span class="n">page_zone_id</span><span class="p">(</span><span class="n">buddy</span><span class="p">))</span>
+        <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="cm">/* 页的order是否相同 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">PageBuddy</span><span class="p">(</span><span class="n">buddy</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">page_order</span><span class="p">(</span><span class="n">buddy</span><span class="p">)</span> <span class="o">==</span> <span class="n">order</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">VM_BUG_ON</span><span class="p">(</span><span class="n">page_count</span><span class="p">(</span><span class="n">buddy</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">);</span>
+        <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>扯了这么多终于可以看<em>__free_one_page</em>这个函数了。</p>
+
+<h4 id="mmpageallocc-5">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="kt">void</span> <span class="nf">__free_one_page</span><span class="p">(</span><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">,</span>
+        <span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">zone</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">order</span><span class="p">,</span>
+        <span class="kt">int</span> <span class="n">migratetype</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">page_idx</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">PageCompound</span><span class="p">(</span><span class="n">page</span><span class="p">)))</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">destroy_compound_page</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">order</span><span class="p">)))</span>
+            <span class="k">return</span><span class="p">;</span>
+
+    <span class="n">VM_BUG_ON</span><span class="p">(</span><span class="n">migratetype</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+    <span class="cm">/* 找到页的索引 */</span>
+    <span class="n">page_idx</span> <span class="o">=</span> <span class="n">page_to_pfn</span><span class="p">(</span><span class="n">page</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">((</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">MAX_ORDER</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">);</span>
+
+    <span class="n">VM_BUG_ON</span><span class="p">(</span><span class="n">page_idx</span> <span class="o">&amp;</span> <span class="p">((</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">order</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">));</span>
+    <span class="n">VM_BUG_ON</span><span class="p">(</span><span class="n">bad_range</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">page</span><span class="p">));</span>
+    <span class="cm">/* 从页的阶开始遍历，直到最高阶-1 */</span>
+    <span class="k">while</span> <span class="p">(</span><span class="n">order</span> <span class="o">&lt;</span> <span class="n">MAX_ORDER</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">combined_idx</span><span class="p">;</span>
+        <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">buddy</span><span class="p">;</span>
+        <span class="cm">/* 通过索引找到伙伴 */</span>
+        <span class="n">buddy</span> <span class="o">=</span> <span class="n">__page_find_buddy</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">page_idx</span><span class="p">,</span> <span class="n">order</span><span class="p">);</span>
+        <span class="cm">/* 再一次检查是否可以合并伙伴 */</span>
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">page_is_buddy</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">buddy</span><span class="p">,</span> <span class="n">order</span><span class="p">))</span>
+            <span class="k">break</span><span class="p">;</span>
+
+        <span class="cm">/* 伙伴是空闲的，合并并且向上一个order移动 */</span>
+        <span class="n">list_del</span><span class="p">(</span><span class="o">&amp;</span><span class="n">buddy</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">);</span>
+        <span class="n">zone</span><span class="o">-&gt;</span><span class="n">free_area</span><span class="p">[</span><span class="n">order</span><span class="p">].</span><span class="n">nr_free</span><span class="o">--</span><span class="p">;</span>
+        <span class="n">rmv_page_order</span><span class="p">(</span><span class="n">buddy</span><span class="p">);</span>
+        <span class="cm">/* 找到合并的页索引 */</span>
+        <span class="n">combined_idx</span> <span class="o">=</span> <span class="n">__find_combined_index</span><span class="p">(</span><span class="n">page_idx</span><span class="p">,</span> <span class="n">order</span><span class="p">);</span>
+        <span class="n">page</span> <span class="o">=</span> <span class="n">page</span> <span class="o">+</span> <span class="p">(</span><span class="n">combined_idx</span> <span class="o">-</span> <span class="n">page_idx</span><span class="p">);</span>
+        <span class="cm">/* 合并并且order递增 */</span>
+        <span class="n">page_idx</span> <span class="o">=</span> <span class="n">combined_idx</span><span class="p">;</span>
+        <span class="n">order</span><span class="o">++</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">set_page_order</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">order</span><span class="p">);</span>
+    <span class="cm">/* page-&gt;lru队列增加到free_area相应的列表中 */</span>
+    <span class="n">list_add</span><span class="p">(</span><span class="o">&amp;</span><span class="n">page</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="n">zone</span><span class="o">-&gt;</span><span class="n">free_area</span><span class="p">[</span><span class="n">order</span><span class="p">].</span><span class="n">free_list</span><span class="p">[</span><span class="n">migratetype</span><span class="p">]);</span>
+    <span class="n">zone</span><span class="o">-&gt;</span><span class="n">free_area</span><span class="p">[</span><span class="n">order</span><span class="p">].</span><span class="n">nr_free</span><span class="o">++</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>举个例子，假设回收一个页，这个页的索引为10，那么实例图如下：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/free_steps.png" alt="free_steps" style="max-width:600px" /></p>
+
+<p class="center">将一个页归还给伙伴系统示意图</p>
+
+<p>释放页会一直还循环到更高的阶，直到最高阶或者找不到伙伴可以合并为止。</p>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#释放页">#释放页</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#伙伴系统">#伙伴系统</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/loop-interrupt/" class="pre">&lt; 处理程序的嵌套执行</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/read-copy-update/" class="next">读-拷贝-更新 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm_manage内存管理_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章释放页写于2014年05月05日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

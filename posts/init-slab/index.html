@@ -1,0 +1,367 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>slab初始化|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 slab初始化..." name="description"/>
+  <meta content="slab," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/init-slab/" />
+  <meta property="og:title" content="slab初始化" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 slab初始化..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">slab初始化</div>
+
+  <div class="content mm_manage内存管理_content_css">
+    <p>slab初始化并不是特别麻烦，因为伙伴系统已经完全启用，内核没有收到其他的特别限制。尽管如此，由于slab分配器的结构所示，这就产生了一个鸡与蛋的问题。</p>
+
+<p>为初始化slab数据结构，内核需要若干远小于一整页的内存块，这些最适合由<em>kmalloc</em>分配，这里的关键所在是，只有slab系统启用之后才能使用<em>kmalloc</em>。</p>
+
+<p>更确切的说，该问题涉及<em>kmalloc</em>的per-CPU缓存的初始化，这些缓存能够初始化之前，<em>kmalloc</em>必须可以用来分配所需的内存空间，而<em>kmalloc</em>自身也处于初始化的过程中，也就是说，<em>kmalloc</em>只能在<em>kmalloc</em>已经初始化之后初始化，这是个不可能的场景，所以内核需要使用一些技巧。</p>
+
+<p><em>kmalloc_cache_init</em>函数用于初始化slab分配器，它在内核初始化阶段、伙伴系统启用之后调用。但在多处理器系统上，启动CPU此时正在运行，而其他的CPU尚未初始化，所以<em>kmalloc_cache_init</em>采用了一个多步骤过程，逐步激活slab分配器。</p>
+
+<h4 id="mmslabc">&lt;mm/slab.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">void</span> <span class="n">__init</span> <span class="nf">kmem_cache_init</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">size_t</span> <span class="n">left_over</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">cache_sizes</span> <span class="o">*</span><span class="n">sizes</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">cache_names</span> <span class="o">*</span><span class="n">names</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">i</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">order</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">node</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">num_possible_nodes</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="n">use_alien_caches</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">NUM_INIT_LISTS</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">kmem_list3_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">initkmem_list3</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="o">&lt;</span> <span class="n">MAX_NUMNODES</span><span class="p">)</span>
+            <span class="n">cache_cache</span><span class="p">.</span><span class="n">nodelists</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">set_up_list3s</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_cache</span><span class="p">,</span> <span class="n">CACHE_CACHE</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">totalram_pages</span> <span class="o">&gt;</span> <span class="p">(</span><span class="mi">32</span> <span class="o">&lt;&lt;</span> <span class="mi">20</span><span class="p">)</span> <span class="o">&gt;&gt;</span> <span class="n">PAGE_SHIFT</span><span class="p">)</span>
+        <span class="n">slab_break_gfp_order</span> <span class="o">=</span> <span class="n">BREAK_GFP_ORDER_HI</span><span class="p">;</span>
+
+    <span class="n">node</span> <span class="o">=</span> <span class="n">numa_node_id</span><span class="p">();</span>
+
+    <span class="cm">/* 1) 创建 cache_cache 对象 */</span>
+    <span class="n">INIT_LIST_HEAD</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_chain</span><span class="p">);</span>
+    <span class="n">list_add</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_cache</span><span class="p">.</span><span class="n">next</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cache_chain</span><span class="p">);</span>
+    <span class="n">cache_cache</span><span class="p">.</span><span class="n">colour_off</span> <span class="o">=</span> <span class="n">cache_line_size</span><span class="p">();</span>
+    <span class="n">cache_cache</span><span class="p">.</span><span class="n">array</span><span class="p">[</span><span class="n">smp_processor_id</span><span class="p">()]</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">initarray_cache</span><span class="p">.</span><span class="n">cache</span><span class="p">;</span>
+    <span class="n">cache_cache</span><span class="p">.</span><span class="n">nodelists</span><span class="p">[</span><span class="n">node</span><span class="p">]</span> <span class="o">=</span> 
+        <span class="o">&amp;</span><span class="n">initkmem_list3</span><span class="p">[</span><span class="n">CACHE_CACHE</span> <span class="o">+</span> <span class="n">node</span><span class="p">];</span>
+
+    <span class="n">cache_cache</span><span class="p">.</span><span class="n">buffer_size</span> <span class="o">=</span> 
+        <span class="n">offsetof</span><span class="p">(</span><span class="k">struct</span> <span class="n">kmem_cache</span><span class="p">,</span> <span class="n">nodelists</span><span class="p">)</span> <span class="o">+</span>
+        <span class="n">nr_node_ids</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">kmem_list3</span> <span class="o">*</span><span class="p">);</span>
+<span class="cp">#if DEBUG
+</span>    <span class="n">cache_cache</span><span class="p">.</span><span class="n">obj_size</span> <span class="o">=</span> <span class="n">cache_cache</span><span class="p">.</span><span class="n">buffer_size</span><span class="p">;</span>
+<span class="cp">#endif
+</span>    <span class="n">cache_cache</span><span class="p">.</span><span class="n">buffer_size</span> <span class="o">=</span> <span class="n">ALIGN</span><span class="p">(</span><span class="n">cache_cache</span><span class="p">.</span><span class="n">buffer_size</span><span class="p">,</span>
+                    <span class="n">cache_line_size</span><span class="p">());</span>
+    <span class="n">cache_cache</span><span class="p">.</span><span class="n">reciprocal_buffer_size</span> <span class="o">=</span>
+        <span class="n">reciprocal_value</span><span class="p">(</span><span class="n">cache_cache</span><span class="p">.</span><span class="n">buffer_size</span><span class="p">);</span>
+
+    <span class="k">for</span> <span class="p">(</span><span class="n">order</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">order</span> <span class="o">&lt;</span> <span class="n">MAX_ORDER</span><span class="p">;</span> <span class="n">order</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">cache_estimate</span><span class="p">(</span><span class="n">order</span><span class="p">,</span> <span class="n">cache_cache</span><span class="p">.</span><span class="n">buffer_size</span><span class="p">,</span>
+            <span class="n">cache_line_size</span><span class="p">(),</span> <span class="mi">0</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">left_over</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cache_cache</span><span class="p">.</span><span class="n">num</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">cache_cache</span><span class="p">.</span><span class="n">num</span><span class="p">)</span>
+            <span class="k">break</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">BUG_ON</span><span class="p">(</span><span class="o">!</span><span class="n">cache_cache</span><span class="p">.</span><span class="n">num</span><span class="p">);</span>
+    <span class="n">cache_cache</span><span class="p">.</span><span class="n">gfporder</span> <span class="o">=</span> <span class="n">order</span><span class="p">;</span>
+    <span class="n">cache_cache</span><span class="p">.</span><span class="n">colour</span> <span class="o">=</span> <span class="n">left_over</span> <span class="o">/</span> <span class="n">cache_cache</span><span class="p">.</span><span class="n">colour_off</span><span class="p">;</span>
+    <span class="n">cache_cache</span><span class="p">.</span><span class="n">slab_size</span> <span class="o">=</span> 
+        <span class="n">ALIGN</span><span class="p">(</span><span class="n">cache_cache</span><span class="p">.</span><span class="n">num</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">kmem_bufctl_t</span><span class="p">)</span> <span class="o">+</span>
+              <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">slab</span><span class="p">),</span> <span class="n">cache_line_size</span><span class="p">());</span>
+
+    <span class="cm">/* 2+3) 创建 kmalloc 缓存 */</span>
+    <span class="n">sizes</span> <span class="o">=</span> <span class="n">malloc_sizes</span><span class="p">;</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="n">cache_names</span><span class="p">;</span>
+
+    <span class="n">sizes</span><span class="p">[</span><span class="n">INDEX_AC</span><span class="p">].</span><span class="n">cs_cachep</span> <span class="o">=</span> 
+        <span class="n">kmem_cache_create</span><span class="p">(</span><span class="n">names</span><span class="p">[</span><span class="n">INDEX_AC</span><span class="p">].</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">sizes</span><span class="p">[</span><span class="n">INDEX_AC</span><span class="p">].</span><span class="n">cs_size</span><span class="p">,</span>
+                    <span class="n">ARCH_KMALLOC_MINALIGN</span><span class="p">,</span>
+                    <span class="n">ARCH_KMALLOC_FLAGS</span><span class="o">|</span><span class="n">SLAB_PANIC</span><span class="p">,</span>
+                    <span class="nb">NULL</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">INDEX_AC</span> <span class="o">!=</span> <span class="n">INDEX_L3</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">sizes</span><span class="p">[</span><span class="n">INDEX_L3</span><span class="p">].</span><span class="n">cs_cachep</span> <span class="o">=</span>
+            <span class="n">kmem_cache_create</span><span class="p">(</span><span class="n">names</span><span class="p">[</span><span class="n">INDEX_L3</span><span class="p">].</span><span class="n">name</span><span class="p">,</span>
+                <span class="n">sizes</span><span class="p">[</span><span class="n">INDEX_L3</span><span class="p">].</span><span class="n">cs_size</span><span class="p">,</span>
+                <span class="n">ARCH_KMALLOC_MINALIGN</span><span class="p">,</span>
+                <span class="n">ARCH_KMALLOC_FLAGS</span><span class="o">|</span><span class="n">SLAB_PANIC</span><span class="p">,</span>
+                <span class="nb">NULL</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="n">slab_early_init</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="k">while</span> <span class="p">(</span><span class="n">sizes</span><span class="o">-&gt;</span><span class="n">cs_size</span> <span class="o">!=</span> <span class="n">ULONG_MAX</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">sizes</span><span class="o">-&gt;</span><span class="n">cs_cachep</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">sizes</span><span class="o">-&gt;</span><span class="n">cs_cachep</span> <span class="o">=</span> <span class="n">kmem_cache_create</span><span class="p">(</span><span class="n">names</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">sizes</span><span class="o">-&gt;</span><span class="n">cs_size</span><span class="p">,</span>
+                    <span class="n">ARCH_KMALLOC_MINALIGN</span><span class="p">,</span>
+                    <span class="n">ARCH_KMALLOC_FLAGS</span><span class="o">|</span><span class="n">SLAB_PANIC</span><span class="p">,</span>
+                    <span class="nb">NULL</span><span class="p">);</span>
+        <span class="p">}</span>
+<span class="cp">#ifdef CONFIG_ZONE_DMA
+</span>        <span class="n">sizes</span><span class="o">-&gt;</span><span class="n">cs_dmacachep</span> <span class="o">=</span> <span class="n">kmem_cache_create</span><span class="p">(</span>
+                    <span class="n">names</span><span class="o">-&gt;</span><span class="n">name_dma</span><span class="p">,</span>
+                    <span class="n">sizes</span><span class="o">-&gt;</span><span class="n">cs_size</span><span class="p">,</span>
+                    <span class="n">ARCH_KMALLOC_MINALIGN</span><span class="p">,</span>
+                    <span class="n">ARCH_KMALLOC_FLAGS</span><span class="o">|</span><span class="n">SLAB_CACHE_DMA</span><span class="o">|</span>
+                        <span class="n">SLAB_PANIC</span><span class="p">,</span>
+                    <span class="nb">NULL</span><span class="p">);</span>
+<span class="cp">#endif
+</span>        <span class="n">sizes</span><span class="o">++</span><span class="p">;</span>
+        <span class="n">names</span><span class="o">++</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="cm">/* 4) 替换bootstrap head arrays */</span>
+    <span class="p">{</span>
+        <span class="k">struct</span> <span class="n">array_cache</span> <span class="o">*</span><span class="n">ptr</span><span class="p">;</span>
+
+        <span class="n">ptr</span> <span class="o">=</span> <span class="n">kmalloc</span><span class="p">(</span><span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">arraycache_init</span><span class="p">),</span> <span class="n">GFP_NOWAIT</span><span class="p">);</span>
+
+        <span class="n">BUG_ON</span><span class="p">(</span>
+            <span class="n">cpu_cache_get</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_cache</span><span class="p">)</span> <span class="o">!=</span> <span class="o">&amp;</span><span class="n">initarray_cache</span><span class="p">.</span><span class="n">cache</span>
+        <span class="p">);</span>
+        <span class="n">memcpy</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">cpu_cache_get</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_cache</span><span class="p">),</span>
+               <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">arraycache_init</span><span class="p">));</span>
+        <span class="n">spin_lock_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ptr</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">);</span>
+
+        <span class="n">cache_cache</span><span class="p">.</span><span class="n">array</span><span class="p">[</span><span class="n">smp_processor_id</span><span class="p">()]</span> <span class="o">=</span> <span class="n">ptr</span><span class="p">;</span>
+
+        <span class="n">ptr</span> <span class="o">=</span> <span class="n">kmalloc</span><span class="p">(</span><span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">arraycache_init</span><span class="p">),</span> <span class="n">GFP_NOWAIT</span><span class="p">);</span>
+
+        <span class="n">BUG_ON</span><span class="p">(</span><span class="n">cpu_cache_get</span><span class="p">(</span><span class="n">malloc_sizes</span><span class="p">[</span><span class="n">INDEX_AC</span><span class="p">].</span><span class="n">cs_cachep</span><span class="p">)</span>
+               <span class="o">!=</span> <span class="o">&amp;</span><span class="n">initarray_generic</span><span class="p">.</span><span class="n">cache</span><span class="p">);</span>
+        <span class="n">memcpy</span><span class="p">(</span><span class="n">ptr</span><span class="p">,</span> <span class="n">cpu_cache_get</span><span class="p">(</span><span class="n">malloc_sizes</span><span class="p">[</span><span class="n">INDEX_AC</span><span class="p">].</span><span class="n">cs_cachep</span><span class="p">),</span>
+               <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">arraycache_init</span><span class="p">));</span>
+        <span class="n">spin_lock_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ptr</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">);</span>
+
+        <span class="n">malloc_sizes</span><span class="p">[</span><span class="n">INDEX_AC</span><span class="p">].</span><span class="n">cs_cachep</span><span class="o">-&gt;</span><span class="n">array</span><span class="p">[</span><span class="n">smp_processor_id</span><span class="p">()]</span>
+            <span class="o">=</span> <span class="n">ptr</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="cm">/* 5) 替换 bootstrap kmem_list3's */</span>
+    <span class="p">{</span>
+        <span class="kt">int</span> <span class="n">nid</span><span class="p">;</span>
+
+        <span class="n">for_each_online_node</span><span class="p">(</span><span class="n">nid</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">init_list</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_cache</span><span class="p">,</span>
+                <span class="o">&amp;</span><span class="n">initkmem_list3</span><span class="p">[</span><span class="n">CACHE_CACHE</span> <span class="o">+</span> <span class="n">nid</span><span class="p">],</span> <span class="n">nid</span><span class="p">);</span>
+
+            <span class="n">init_list</span><span class="p">(</span><span class="n">malloc_sizes</span><span class="p">[</span><span class="n">INDEX_AC</span><span class="p">].</span><span class="n">cs_cachep</span><span class="p">,</span>
+                  <span class="o">&amp;</span><span class="n">initkmem_list3</span><span class="p">[</span><span class="n">SIZE_AC</span> <span class="o">+</span> <span class="n">nid</span><span class="p">],</span> <span class="n">nid</span><span class="p">);</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">INDEX_AC</span> <span class="o">!=</span> <span class="n">INDEX_L3</span><span class="p">)</span> <span class="p">{</span>
+                <span class="n">init_list</span><span class="p">(</span><span class="n">malloc_sizes</span><span class="p">[</span><span class="n">INDEX_L3</span><span class="p">].</span><span class="n">cs_cachep</span><span class="p">,</span>
+                      <span class="o">&amp;</span><span class="n">initkmem_list3</span><span class="p">[</span><span class="n">SIZE_L3</span> <span class="o">+</span> <span class="n">nid</span><span class="p">],</span> <span class="n">nid</span><span class="p">);</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="n">g_cpucache_up</span> <span class="o">=</span> <span class="n">EARLY</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>首先，<em>kmalloc_cache_init</em>创建系统中的第一个slab缓存，以便为<em>kmem_cache</em>的实例提供内存，为此，内核使用的主要是在编译时创建的静态数据，实际上，一个静态数据结构用作per-CPU数组。创建的slab缓存名字为<em>cache_cache</em>。</p>
+
+<p>然后，<em>kmalloc_cache_init</em>接下来初始化一般性的缓存，用作<em>kmalloc</em>内存的来源。为此，针对所需的各个缓存长度，分别调用<em>kmem_cache_create</em>函数。这个函数起初只需要<em>cache_cache</em>缓存已经建立即可，但在初始化per-CPU缓存时，该函数必须借助于<em>kmalloc</em>，在目前这个情况，依旧不可能。</p>
+
+<p>所以，内核使用了<em>g_cpucache_up</em>变量，可以接受<em>NONE</em>、<em>PARTIAL_AC</em>、<em>PARTIAL_L3</em>以及<em>FULL</em>四个值，以反映<em>kmalloc</em>初始化的状态。最初内核的状态时<em>NONE</em>，在最小的<em>kmalloc</em>缓存初始化时，在其将一个静态的变量用于per-CPU的缓存数据。</p>
+
+<p><em>g_cpucache_up</em>接下来设置为<em>PARTIAL_AC</em>，表示<em>array_cache</em>的实例可以立即分配，如果初始化的长度还足够分配<em>kmem_list3</em>实例，则状态立即转换为<em>PARTIAL_L3</em>，否则只能等下一个更大的缓存初始化之后才能变更。</p>
+
+<p>剩余的<em>kmalloc</em>缓存的per-CPU数据现在可以用<em>kmalloc</em>创建，这是一个<em>arraycache_init</em>实例，只需要最小的<em>kmalloc</em>内存区。</p>
+
+<p>在<em>kmalloc_cache_init</em>的最后一步，把到现在为止一直使用的数据结构的所有静态实例化的成员，用<em>kmalloc</em>动态分配的版本替换。这个时候<em>g_cpucache_up</em>变量的状态时<em>FULL</em>，表示slab分配器已经就绪可以使用。</p>
+
+<h4 id="mmslabc-1">&lt;mm/slab.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">void</span> <span class="n">__init</span> <span class="nf">kmem_cache_init_late</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">kmem_cache</span> <span class="o">*</span><span class="n">cachep</span><span class="p">;</span>
+
+    <span class="cm">/* 重新改变head数组的长度到它们真实分配的长度 */</span>
+    <span class="n">mutex_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_chain_mutex</span><span class="p">);</span>
+    <span class="n">list_for_each_entry</span><span class="p">(</span><span class="n">cachep</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cache_chain</span><span class="p">,</span> <span class="n">next</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">enable_cpucache</span><span class="p">(</span><span class="n">cachep</span><span class="p">,</span> <span class="n">GFP_NOWAIT</span><span class="p">))</span>
+            <span class="n">BUG</span><span class="p">();</span>
+    <span class="n">mutex_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_chain_mutex</span><span class="p">);</span>
+
+    <span class="cm">/* 完成了! */</span>
+    <span class="n">g_cpucache_up</span> <span class="o">=</span> <span class="n">FULL</span><span class="p">;</span>
+
+    <span class="n">init_lock_keys</span><span class="p">();</span>
+
+    <span class="n">register_cpu_notifier</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cpucache_notifier</span><span class="p">);</span>
+<span class="p">}</span></code></pre></div>
+
+<p>处理完成代码如上。</p>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#slab">#slab</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/completion/" class="pre">&lt; 完成量</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/virtual-filesystem/" class="next">虚拟文件系统 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm_manage内存管理_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章slab初始化写于2014年05月11日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

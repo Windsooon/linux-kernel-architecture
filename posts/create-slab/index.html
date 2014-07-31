@@ -1,0 +1,466 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>slab创建|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 创建缓存..." name="description"/>
+  <meta content="slab," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/create-slab/" />
+  <meta property="og:title" content="slab创建" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 创建缓存..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">slab创建</div>
+
+  <div class="content mm_manage内存管理_content_css">
+    <p>创建新的slab缓存必须使用<em>kmem_cache_create</em>函数，这个函数很长，在分析代码之前我们可以看看这个函数的流程图。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/slab_create.png" alt="slab" style="max-width:600px" /></p>
+
+<p class="center">创建slab流程图</p>
+
+<p>除了可读的<em>name</em>随后会出现在<em>/proc/slabinfo</em>，这个函数的参数需要进行一些检查，以确保没有指定一些无效的值。去掉一些调试的代码，其函数的代码如下。</p>
+
+<h4 id="mmslabc">&lt;mm/slab.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">kmem_cache</span> <span class="o">*</span>
+<span class="nf">kmem_cache_create</span> <span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">size</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">align</span><span class="p">,</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">flags</span><span class="p">,</span> <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">ctor</span><span class="p">)(</span><span class="kt">void</span> <span class="o">*</span><span class="p">))</span>
+<span class="p">{</span>
+    <span class="kt">size_t</span> <span class="n">left_over</span><span class="p">,</span> <span class="n">slab_size</span><span class="p">,</span> <span class="n">ralign</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">kmem_cache</span> <span class="o">*</span><span class="n">cachep</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">,</span> <span class="o">*</span><span class="n">pc</span><span class="p">;</span>
+    <span class="n">gfp_t</span> <span class="n">gfp</span><span class="p">;</span>
+
+    <span class="cm">/*
+     * 正常的检查
+     */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">name</span> <span class="o">||</span> <span class="n">in_interrupt</span><span class="p">()</span> <span class="o">||</span> <span class="p">(</span><span class="n">size</span> <span class="o">&lt;</span> <span class="n">BYTES_PER_WORD</span><span class="p">)</span> <span class="o">||</span>
+        <span class="n">size</span> <span class="o">&gt;</span> <span class="n">KMALLOC_MAX_SIZE</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">printk</span><span class="p">(</span><span class="n">KERN_ERR</span> <span class="s">"%s: Early error in slab %s</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">__func__</span><span class="p">,</span>
+                <span class="n">name</span><span class="p">);</span>
+        <span class="n">BUG</span><span class="p">();</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">slab_is_available</span><span class="p">())</span> <span class="p">{</span>
+        <span class="n">get_online_cpus</span><span class="p">();</span>
+        <span class="n">mutex_lock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_chain_mutex</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="n">list_for_each_entry</span><span class="p">(</span><span class="n">pc</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cache_chain</span><span class="p">,</span> <span class="n">next</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kt">char</span> <span class="n">tmp</span><span class="p">;</span>
+        <span class="kt">int</span> <span class="n">res</span><span class="p">;</span>
+
+        <span class="cm">/*
+         * area of the module.  Print a warning.
+         * 只有module没有卸载并且没有销毁它的slab缓存
+         * 并且没有其他地方重用了vmalloc才会出现这种情况
+         */</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">probe_kernel_address</span><span class="p">(</span><span class="n">pc</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">,</span> <span class="n">tmp</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">res</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">printk</span><span class="p">(</span><span class="n">KERN_ERR</span>
+                   <span class="s">"SLAB: cache with size %d has lost its name</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span>
+                   <span class="n">pc</span><span class="o">-&gt;</span><span class="n">buffer_size</span><span class="p">);</span>
+            <span class="k">continue</span><span class="p">;</span>
+        <span class="p">}</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">strcmp</span><span class="p">(</span><span class="n">pc</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">,</span> <span class="n">name</span><span class="p">))</span> <span class="p">{</span>
+            <span class="n">printk</span><span class="p">(</span><span class="n">KERN_ERR</span>
+                   <span class="s">"kmem_cache_create: duplicate cache %s</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">name</span><span class="p">);</span>
+            <span class="n">dump_stack</span><span class="p">();</span>
+            <span class="k">goto</span> <span class="n">oops</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* DEBUG CODE IGNORED */</span>
+
+    <span class="cm">/*
+     * 计算对齐所需要的填充字节
+     * 对象长度向上舍入到处理器字长的倍数
+     */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">size</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">BYTES_PER_WORD</span> <span class="o">-</span> <span class="mi">1</span><span class="p">))</span> <span class="p">{</span>
+        <span class="n">size</span> <span class="o">+=</span> <span class="p">(</span><span class="n">BYTES_PER_WORD</span> <span class="o">-</span> <span class="mi">1</span><span class="p">);</span>
+        <span class="n">size</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="p">(</span><span class="n">BYTES_PER_WORD</span> <span class="o">-</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* 计算最终需要对齐的填充字节 */</span>
+
+    <span class="cm">/* 1) 体系结构推荐 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">SLAB_HWCACHE_ALIGN</span><span class="p">)</span> <span class="p">{</span>
+        <span class="cm">/*
+         * 默认对齐值，由特定于体系结构的代码指定
+         * 如果一个对象比较小，则会将多个对象挤到
+         * 一个缓存行中
+         */</span>
+        <span class="n">ralign</span> <span class="o">=</span> <span class="n">cache_line_size</span><span class="p">();</span>
+        <span class="k">while</span> <span class="p">(</span><span class="n">size</span> <span class="o">&lt;=</span> <span class="n">ralign</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="n">ralign</span> <span class="o">/=</span> <span class="mi">2</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="n">ralign</span> <span class="o">=</span> <span class="n">BYTES_PER_WORD</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="cm">/*
+     * 字对齐或者更大
+     * 这个可能会被体系结构相关覆盖
+     */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">SLAB_STORE_USER</span><span class="p">)</span>
+        <span class="n">ralign</span> <span class="o">=</span> <span class="n">BYTES_PER_WORD</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">SLAB_RED_ZONE</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">ralign</span> <span class="o">=</span> <span class="n">REDZONE_ALIGN</span><span class="p">;</span>
+        <span class="n">size</span> <span class="o">+=</span> <span class="n">REDZONE_ALIGN</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="n">size</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="p">(</span><span class="n">REDZONE_ALIGN</span> <span class="o">-</span> <span class="mi">1</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* 2)体系结构强制的最小对齐值 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">ralign</span> <span class="o">&lt;</span> <span class="n">ARCH_SLAB_MINALIGN</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">ralign</span> <span class="o">=</span> <span class="n">ARCH_SLAB_MINALIGN</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="cm">/* 3) 调用者强制的对齐值 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">ralign</span> <span class="o">&lt;</span> <span class="n">align</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">ralign</span> <span class="o">=</span> <span class="n">align</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="cm">/* 去掉调试 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">ralign</span> <span class="o">&gt;</span> <span class="n">__alignof__</span><span class="p">(</span><span class="kt">unsigned</span> <span class="kt">long</span> <span class="kt">long</span><span class="p">))</span>
+        <span class="n">flags</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="p">(</span><span class="n">SLAB_RED_ZONE</span> <span class="o">|</span> <span class="n">SLAB_STORE_USER</span><span class="p">);</span>
+    <span class="cm">/*
+     * 4) 存储最后计算出的对齐值
+     */</span>
+    <span class="n">align</span> <span class="o">=</span> <span class="n">ralign</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">slab_is_available</span><span class="p">())</span>
+        <span class="n">gfp</span> <span class="o">=</span> <span class="n">GFP_KERNEL</span><span class="p">;</span>
+    <span class="k">else</span>
+        <span class="n">gfp</span> <span class="o">=</span> <span class="n">GFP_NOWAIT</span><span class="p">;</span>
+
+    <span class="cm">/* 获取缓存的描述符对象 */</span>
+    <span class="n">cachep</span> <span class="o">=</span> <span class="n">kmem_cache_zalloc</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_cache</span><span class="p">,</span> <span class="n">gfp</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">cachep</span><span class="p">)</span>
+        <span class="k">goto</span> <span class="n">oops</span><span class="p">;</span>
+
+    <span class="cm">/* DEBUG CODE IGNORED */</span>
+
+    <span class="cm">/*
+     * 对象长度比较大，那么最好将slab管理数据
+     * 放置在slab之外
+     */</span>
+    <span class="k">if</span> <span class="p">((</span><span class="n">size</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="n">PAGE_SIZE</span> <span class="o">&gt;&gt;</span> <span class="mi">3</span><span class="p">))</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">slab_early_init</span><span class="p">)</span>
+        <span class="n">flags</span> <span class="o">|=</span> <span class="n">CFLGS_OFF_SLAB</span><span class="p">;</span>
+
+    <span class="n">size</span> <span class="o">=</span> <span class="n">ALIGN</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">align</span><span class="p">);</span>
+
+    <span class="cm">/*
+     * 到目前位置，只定义了对象的长度，没有定义
+     * slab的长度，因此系统需要找到适当的页数来
+     * 定义slab的长度，即不能太大，也不能太小
+     * 内核通过calculate_slab_order函数实现迭代
+     * 过程，找到理想的slab长度
+     */</span>
+
+    <span class="n">left_over</span> <span class="o">=</span> <span class="n">calculate_slab_order</span><span class="p">(</span><span class="n">cachep</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="n">align</span><span class="p">,</span> <span class="n">flags</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">cachep</span><span class="o">-&gt;</span><span class="n">num</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">printk</span><span class="p">(</span><span class="n">KERN_ERR</span>
+               <span class="s">"kmem_cache_create: couldn't create cache %s.</span><span class="se">\n</span><span class="s">"</span>
+               <span class="p">,</span> <span class="n">name</span><span class="p">);</span>
+        <span class="n">kmem_cache_free</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_cache</span><span class="p">,</span> <span class="n">cachep</span><span class="p">);</span>
+        <span class="n">cachep</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+        <span class="k">goto</span> <span class="n">oops</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="n">slab_size</span> <span class="o">=</span> <span class="n">ALIGN</span><span class="p">(</span><span class="n">cachep</span><span class="o">-&gt;</span><span class="n">num</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">kmem_bufctl_t</span><span class="p">)</span>
+              <span class="o">+</span> <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">slab</span><span class="p">),</span> <span class="n">align</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">CFLGS_OFF_SLAB</span> <span class="o">&amp;&amp;</span> <span class="n">left_over</span> <span class="o">&gt;=</span> <span class="n">slab_size</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">flags</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="n">CFLGS_OFF_SLAB</span><span class="p">;</span>
+        <span class="n">left_over</span> <span class="o">-=</span> <span class="n">slab_size</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">CFLGS_OFF_SLAB</span><span class="p">)</span> <span class="p">{</span>
+        <span class="cm">/* 如果设置了该值，那么较小的对象
+         * 也可以将slab头放在slab之外
+         */</span>
+        <span class="n">slab_size</span> <span class="o">=</span>
+            <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">num</span> <span class="o">*</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">kmem_bufctl_t</span><span class="p">)</span>
+                <span class="o">+</span> <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">slab</span><span class="p">);</span>
+
+<span class="cp">#ifdef CONFIG_PAGE_POISONING
+</span>        <span class="k">if</span> <span class="p">(</span><span class="n">size</span> <span class="o">%</span> <span class="n">PAGE_SIZE</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="n">flags</span> <span class="o">&amp;</span> <span class="n">SLAB_POISON</span><span class="p">)</span>
+            <span class="n">flags</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="p">(</span><span class="n">SLAB_RED_ZONE</span> <span class="o">|</span> <span class="n">SLAB_STORE_USER</span><span class="p">);</span>
+<span class="cp">#endif
+</span>    <span class="p">}</span>
+    <span class="cm">/* 特定于体系结构的函数，获得L1缓存行的长度 */</span>
+    <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">colour_off</span> <span class="o">=</span> <span class="n">cache_line_size</span><span class="p">();</span>
+    <span class="cm">/* 偏移量必须是对齐值的倍数 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">cachep</span><span class="o">-&gt;</span><span class="n">colour_off</span> <span class="o">&lt;</span> <span class="n">align</span><span class="p">)</span>
+        <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">colour_off</span> <span class="o">=</span> <span class="n">align</span><span class="p">;</span>
+    <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">colour</span> <span class="o">=</span> <span class="n">left_over</span> <span class="o">/</span> <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">colour_off</span><span class="p">;</span>
+    <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">slab_size</span> <span class="o">=</span> <span class="n">slab_size</span><span class="p">;</span>
+    <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">=</span> <span class="n">flags</span><span class="p">;</span>
+    <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">gfpflags</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">CONFIG_ZONE_DMA_FLAG</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">SLAB_CACHE_DMA</span><span class="p">))</span>
+        <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">gfpflags</span> <span class="o">|=</span> <span class="n">GFP_DMA</span><span class="p">;</span>
+    <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">buffer_size</span> <span class="o">=</span> <span class="n">size</span><span class="p">;</span>
+    <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">reciprocal_buffer_size</span> <span class="o">=</span> <span class="n">reciprocal_value</span><span class="p">(</span><span class="n">size</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">CFLGS_OFF_SLAB</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">slabp_cache</span> <span class="o">=</span> <span class="n">kmem_find_general_cachep</span><span class="p">(</span>
+            <span class="n">slab_size</span><span class="p">,</span> <span class="mi">0u</span><span class="p">);</span>
+        <span class="n">BUG_ON</span><span class="p">(</span><span class="n">ZERO_OR_NULL_PTR</span><span class="p">(</span><span class="n">cachep</span><span class="o">-&gt;</span><span class="n">slabp_cache</span><span class="p">));</span>
+    <span class="p">}</span>
+    <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">ctor</span> <span class="o">=</span> <span class="n">ctor</span><span class="p">;</span>
+    <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">setup_cpu_cache</span><span class="p">(</span><span class="n">cachep</span><span class="p">,</span> <span class="n">gfp</span><span class="p">))</span> <span class="p">{</span>
+        <span class="n">__kmem_cache_destroy</span><span class="p">(</span><span class="n">cachep</span><span class="p">);</span>
+        <span class="n">cachep</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+        <span class="k">goto</span> <span class="n">oops</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* 缓存初始化完成，加入到链表中 */</span>
+    <span class="n">list_add</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cachep</span><span class="o">-&gt;</span><span class="n">next</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">cache_chain</span><span class="p">);</span>
+<span class="nl">oops:</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">cachep</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">SLAB_PANIC</span><span class="p">))</span>
+        <span class="n">panic</span><span class="p">(</span><span class="s">"kmem_cache_create(): failed to create slab `%s'</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span>
+              <span class="n">name</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">slab_is_available</span><span class="p">())</span> <span class="p">{</span>
+        <span class="n">mutex_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">cache_chain_mutex</span><span class="p">);</span>
+        <span class="n">put_online_cpus</span><span class="p">();</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">cachep</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL</span><span class="p">(</span><span class="n">kmem_cache_create</span><span class="p">);</span></code></pre></div>
+
+<p>其中一个重要的方法是<em>calculate_slab_order</em>，该方法用于查找slab的长度，slab长度即不能太长也不能太短，太长，则可能会浪费内存，太小，则增加管理的开销，降低使用的效率。内核会通过该函数实现迭代，找到理想的slab长度。</p>
+
+<h4 id="mmslabc-1">&lt;mm/slab.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kt">size_t</span> <span class="nf">calculate_slab_order</span><span class="p">(</span><span class="k">struct</span> <span class="n">kmem_cache</span> <span class="o">*</span><span class="n">cachep</span><span class="p">,</span>
+            <span class="kt">size_t</span> <span class="n">size</span><span class="p">,</span> <span class="kt">size_t</span> <span class="n">align</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">flags</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">offslab_limit</span><span class="p">;</span>
+    <span class="kt">size_t</span> <span class="n">left_over</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">gfporder</span><span class="p">;</span>
+
+    <span class="k">for</span> <span class="p">(</span><span class="n">gfporder</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">gfporder</span> <span class="o">&lt;=</span> <span class="n">KMALLOC_MAX_ORDER</span><span class="p">;</span> <span class="n">gfporder</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">num</span><span class="p">;</span>
+        <span class="kt">size_t</span> <span class="n">remainder</span><span class="p">;</span>
+        <span class="cm">/*
+         * 通过该函数找到一个slab布局
+         */</span>
+        <span class="n">cache_estimate</span><span class="p">(</span><span class="n">gfporder</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> 
+            <span class="n">align</span><span class="p">,</span> <span class="n">flags</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">remainder</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">num</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">num</span><span class="p">)</span>
+            <span class="k">continue</span><span class="p">;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">CFLGS_OFF_SLAB</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">offslab_limit</span> <span class="o">=</span> <span class="n">size</span> <span class="o">-</span> <span class="k">sizeof</span><span class="p">(</span><span class="k">struct</span> <span class="n">slab</span><span class="p">);</span>
+            <span class="n">offslab_limit</span> <span class="o">/=</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">kmem_bufctl_t</span><span class="p">);</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">num</span> <span class="o">&gt;</span> <span class="n">offslab_limit</span><span class="p">)</span>
+                <span class="k">break</span><span class="p">;</span>
+        <span class="p">}</span>
+
+        <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">num</span> <span class="o">=</span> <span class="n">num</span><span class="p">;</span>
+        <span class="n">cachep</span><span class="o">-&gt;</span><span class="n">gfporder</span> <span class="o">=</span> <span class="n">gfporder</span><span class="p">;</span>
+        <span class="n">left_over</span> <span class="o">=</span> <span class="n">remainder</span><span class="p">;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">SLAB_RECLAIM_ACCOUNT</span><span class="p">)</span>
+            <span class="k">break</span><span class="p">;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">gfporder</span> <span class="o">&gt;=</span> <span class="n">slab_break_gfp_order</span><span class="p">)</span>
+            <span class="k">break</span><span class="p">;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">left_over</span> <span class="o">*</span> <span class="mi">8</span> <span class="o">&lt;=</span> <span class="p">(</span><span class="n">PAGE_SIZE</span> <span class="o">&lt;&lt;</span> <span class="n">gfporder</span><span class="p">))</span>
+            <span class="k">break</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">left_over</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>如果slab上有足够的空闲空间可存储slab头，那么即使实际应该存储在slab之外，内核也会利用这个机会，将其存储在slab外。</p>
+
+<p>在执行了查找slab长度的操作之后，内核对slab进行着色。</p>
+
+<p>内核使用L1缓存行的长度作为偏移量，这个值可以通过特定于体系结构的函数<em>cache_line_size</em>。还必须保证偏移量是所用对齐值的倍数，否则就无法进行数据对齐。例如在一些系统上，对于管理长度为256字节的对象，内核会产生如下结果<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>：</p>
+
+<ol>
+  <li>一个slab管理15个对象。</li>
+  <li>使用一个页。</li>
+  <li>有五种可能的颜色，每种颜色使用32字节的偏移量。</li>
+  <li>slab头存储在slab上。</li>
+</ol>
+
+<p>虽然处理了slab的布局，但在创建新的slab缓存时，还需要创建per-CPU缓存，为各个处理器分配所需的内存：一个array_cache的实例和一个指针数组，数组项数目由内核计算给出<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>。</p>
+
+<p>最后，在完成初始化之后，将初始化的<em>kmem_cache</em>实例添加到全局连表。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>按照SLAB_HWCACHE_ALLGN的要求对齐到硬件缓存行的缓存。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>另外值得注意的是<em>batchcount</em>字段总是设置为缓存中对象数目的一半。 <a href="#fnref:2" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#slab">#slab</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/common-file-model/" class="pre">&lt; 通用文件模型</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/vfs-system-interfaces/" class="next">VFS相关的系统调用 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm_manage内存管理_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章slab创建写于2014年05月12日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

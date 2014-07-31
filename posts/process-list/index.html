@@ -1,0 +1,211 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>进程链表|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 进程链表..." name="description"/>
+  <meta content="进程链表,run_list," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/process-list/" />
+  <meta property="og:title" content="进程链表" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 进程链表..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">进程链表</div>
+
+  <div class="content process进程_content_css">
+    <p>进程链表是一种双向链表数据结构（<em>list_head</em>），简单的说一下双向链表。每一个双向链表，都有一组操作，插入和删除一个元素，扫描链表等等。双向链表和链表相同，但双向链表除了有指向下一个元素的指针，还有指向上一个元素的指针，所以被称为双向连表。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/link.png" alt="system" style="max-width:500px" /></p>
+
+<p class="center">进程链表</p>
+
+<p>Linux内核提供了<em>list_head</em>数据结构，字段<em>next</em>和<em>prev</em>分表标识链表向后和向前的指针元素。list_head字段的指针中存的是另一个list_head字段的地址。新链表使用宏LIST_HEAD(list_name)创建。</p>
+
+<h3 id="section">进程链表</h3>
+
+<p>进程链表是一个双向链表，进程链表把所有进程的描述符链接起来。每个<em>task_struct</em>
+结构都包含一个<em>list_head</em>类型的<em>tasks</em>字段，这个类型的<em>orev</em>和<em>next</em>字段分别指向前面和后面的<em>task_struct</em>元素。</p>
+
+<p>进程链表的表头是<em>init_task</em>描述符，就是0进程（<em>process 0</em>）或<em>swapper</em>进程的进程描述符。<em>init_task</em>的<em>tasks.prev</em>字段指向链表中最后插入的进程描述符的<em>tasks</em>字段。SET_LINKS和REMOVE_LINKS宏分别用于从进程链表中插入和删除一个进程描述符。另外<em>for_each_process</em>宏用来扫描整个进程链表。</p>
+
+<h3 id="taskrunning">TASK_RUNNING状态的进程链表</h3>
+
+<p>当内核寻找一个在CPU上运行的进程，必须值考虑可运行的进程。早先的Linux把所有可运行的进程都放在一个叫做运行队列（<em>runqueue</em>）的链表中，由于维持连表中的进程优先级排序开销过大，因此早起的调度程序不得不为了某些特殊的功能扫描整个链表。在Linux 2.6实现的运行队列则有所不同。其目的是让调度程序能在固定的时间内选出『最佳』可运行进程，与队列中可运行的进程数无关。</p>
+
+<p><strong>提高调度程序运行速度的诀窍是建立多个可运行进程链表，每种进程优先级对应一个不同的链表</strong>。</p>
+
+<p>每个<em>task_struct</em>描述符包含一个<em>list_head</em>类型的字段<em>run_list</em>。如果进程的优先级等于k<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>，<em>run_list</em>字段把该进程加入优先权为k的可允许进程连表中。在多CPU系统中，每个CPU都有自己的运行队列，这是一个通过使数据结构更复杂来改善性能的典型例子。</p>
+
+<p>进程描述符的<em>prio</em>字段存放进程的动态优先级，而<em>array</em>字段是一个指针，指向当前运行队列的<em>prio_array_t</em>的数据结构。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>其取值范围从0到139。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#进程链表">#进程链表</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#run_list">#run_list</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/one-process/" class="pre">&lt; 标识进程</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-relationship/" class="next">进程之间的关系 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments process进程_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章进程链表写于2014年04月09日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

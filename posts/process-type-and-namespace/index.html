@@ -1,0 +1,226 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>进程类型和命名空间|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 进程类型和命名空间..." name="description"/>
+  <meta content="进程,命名空间," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/process-type-and-namespace/" />
+  <meta property="og:title" content="进程类型和命名空间" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 进程类型和命名空间..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">进程类型和命名空间</div>
+
+  <div class="content process进程_content_css">
+    <p>典型的UNIX进程包括：由二进制代码组成的应用程序、单线程、分配给应用程序的一组资源。信进程是使用fork或者exec系统调用产生的。</p>
+
+<h3 id="fork">fork</h3>
+
+<p>生成当前进程的一个相同的副本，该副本称之为<em>子进程</em>，原进程的所有资源都以适当的方式复制到子进程，因此该系统调用之后，原来的进程就有了两个独立的实例。这两个实例的联系包括：同一组打开文件、同样的工作目录、内存中同样的数据等等，除此之外没有关联。</p>
+
+<h3 id="exec">exec</h3>
+
+<p>从一个可执行的二进制文件加载另一个应用程序，来代替当前运行的进程，换句话说就是加载了信程序。因为exec并不创建信进程，所以必须首先使用fork复制一个旧程序，然后调用exec在系统上创建另一个应用程序。</p>
+
+<p>fork和exec在所有的UNIX操作系统上都是可用的，除此之外Linux还提供了clone系统调用。clone本质上与fork相同，但新的进程不是独立于父进程的，而可以与其共享资源，可以指定需要共享和复制的资源种类，例如父进程的内存数据、打开文件或安装的信号处理程序。clone用于实现线程，但仅仅使用clone还做不到，还需要用户空间库才能提供完整的实现。</p>
+
+<h3 id="section">命名空间</h3>
+
+<p>命名空间提供了虚拟化的一种轻量级形式，使得我们可以从不同的方面来查看运行系统的全局属性。该机制类似于Solaris中的zone或者FreeBSD中的jail。</p>
+
+<p>传统上，Linux以及其他的UNIX的变体中，许多资源是全局管理的，例如系统中的所有进程都是通过PID标识的，这意味着内核必须管理一个全局的PID列表，而且所有的调用者通过uname系统调用返回系统的相关信息都是相同的，用户的ID管理方式类似，各个用户是通过一个全局唯一的UID号标识。</p>
+
+<p>比如用户号为0的root用户可以有很大的权利，而普通用户没有特别的权利，传统上需要给每个用户提供一台计算机，又或者使用KVM或VMWare提供的虚拟化环境是一种解决问题的方法，但资源分配做的不是非常好。计算机的各个用户需要一个独立的内核，以及一份完全安装好的配套的用户层应用。</p>
+
+<p>命名空间提供了一种不同的解决方案，所需的资源较少。在虚拟化的系统中，一台物理计算机可以运行多个内核，可能是并行的多个不同的操作系统。而命名空间则在一台物理机只使用一个内核。前面说的全局资源都通过命名空间抽象起来。这使得可以将一组进程放置到容器中，各个容器之间彼此隔离，隔离可以使得容器的成员完全独立，但可以通过允许容器进行一定的共享来降低容器之间的分隔<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。</p>
+
+<p>命名空间建立了系统的不同视图，如下图。命名空间可以按层次关联起来，每个命名空间都发源于一个父命名空间，一个父命名空间可以有多各子命名空间。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/namespace.png" alt="system" style="max-width:500px" /></p>
+
+<p class="center">命名空间</p>
+
+<p>命名空间可以组织为层次结构。一个命名空间是父命名空间，衍生了两个子命名空间。假定容器用于虚拟主机配置中，其中的每个容器必须看起来是一台单独的Linux计算机，因此其中每个都有自身的init进程，PID为0，其他进程的PID以递增次序分配。两个子命名空间都有PID为0的init进程，以及PID为2、3的进程。</p>
+
+<p>虽然子容器不了解系统中的其他容器，但父容器知道子命名空间的存在，也可以看到其中执行的所有进程，可以看到图中的父命名空间中的进程实际上是隐射到子命名空间中的进程的。</p>
+
+<p>命名空间也可以是非层次的，如果命名空间包含的内容是比较简单的，这样父子命名空间之间没有关系。</p>
+
+<h3 id="section-1">命名空间的创建</h3>
+
+<p>使用fork或clone系统调用创建新进程，有特定的选项可以控制是与父进程共享命名空间还是建立新的命名空间。</p>
+
+<p>使用unshare系统调用将进程的某些部分从父进程分离，其中也包括命名空间。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>例如容器可以设置为使用自身的PID集合，但仍然与其他容器共享部分文件系统。比如最近流行的Docker就是用了命名空间的原理！ <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#进程">#进程</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#命名空间">#命名空间</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/process-life/" class="pre">&lt; 进程生命周期</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/one-process/" class="next">标识进程 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments process进程_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章进程类型和命名空间写于2014年04月02日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

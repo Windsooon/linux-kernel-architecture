@@ -1,0 +1,793 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>分配页|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 分配页..." name="description"/>
+  <meta content="页,分配页,伙伴系统," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/alloc-page/" />
+  <meta property="og:title" content="分配页" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 分配页..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">分配页</div>
+
+  <div class="content mm_manage内存管理_content_css">
+    <p>无论外部使用什么函数和接口分配一个页，最终分配页的函数会调用到<em>alloc_pages_node</em>函数，这个函数是伙伴系统里主要的函数。伙伴系统还需要了解一些<a href="/linux-kernel-architecture/posts/page-frame-allocator/">页框分配器</a>的知识。</p>
+
+<h4 id="includelinuxgfph">&lt;include/linux/gfp.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="nf">alloc_pages_node</span><span class="p">(</span><span class="kt">int</span> <span class="n">nid</span><span class="p">,</span> 
+    <span class="n">gfp_t</span> <span class="n">gfp_mask</span><span class="p">,</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">order</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* 未知结点就是当前结点 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">nid</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">nid</span> <span class="o">=</span> <span class="n">numa_node_id</span><span class="p">();</span>
+
+    <span class="k">return</span> <span class="n">__alloc_pages</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">,</span>
+                         <span class="n">order</span><span class="p">,</span>
+                         <span class="n">node_zonelist</span><span class="p">(</span><span class="n">nid</span><span class="p">,</span> <span class="n">gfp_mask</span><span class="p">));</span>
+<span class="p">}</span></code></pre></div>
+
+<p>这里执行了一个简单的检查，避免分配过大的内存块，如果指定负结点的ID，那么结点就不存在，内核自动使用当前执行CPU对应的结点ID。接下来的工作委托给<em>__alloc_pages</em>函数。而实际上<em>__alloc_pages</em>函数调用了<em>__alloc_pages_nodemask</em>函数。</p>
+
+<h3 id="section">调用函数</h3>
+
+<p>内核源代码将<em>__alloc_pages_nodemask</em>函数作为『伙伴系统的心脏』。我们可以直接找到代码如下：</p>
+
+<h4 id="mmpageallocc">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span>
+<span class="nf">__alloc_pages_nodemask</span><span class="p">(</span><span class="n">gfp_t</span> <span class="n">gfp_mask</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">order</span><span class="p">,</span>
+            <span class="k">struct</span> <span class="n">zonelist</span> <span class="o">*</span><span class="n">zonelist</span><span class="p">,</span> <span class="n">nodemask_t</span> <span class="o">*</span><span class="n">nodemask</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">enum</span> <span class="n">zone_type</span> <span class="n">high_zoneidx</span> <span class="o">=</span> <span class="n">gfp_zone</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">);</span>
+    <span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">preferred_zone</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">migratetype</span> <span class="o">=</span> <span class="n">allocflags_to_migratetype</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">);</span>
+
+    <span class="n">gfp_mask</span> <span class="o">&amp;=</span> <span class="n">gfp_allowed_mask</span><span class="p">;</span>
+
+    <span class="n">lockdep_trace_alloc</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">);</span>
+
+    <span class="n">might_sleep_if</span><span class="p">(</span><span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">__GFP_WAIT</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">should_fail_alloc_page</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">,</span> <span class="n">order</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="o">!</span><span class="n">zonelist</span><span class="o">-&gt;</span><span class="n">_zonerefs</span><span class="o">-&gt;</span><span class="n">zone</span><span class="p">))</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+
+    <span class="n">first_zones_zonelist</span><span class="p">(</span><span class="n">zonelist</span><span class="p">,</span>
+                         <span class="n">high_zoneidx</span><span class="p">,</span>
+                         <span class="n">nodemask</span><span class="p">,</span>
+                         <span class="o">&amp;</span><span class="n">preferred_zone</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">preferred_zone</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+
+    <span class="cm">/* 
+       是伙伴系统的一个重要的辅助函数
+       它通过标志集和分配阶来判断是否能够进行分配
+       如果可以，则发起实际的分配操作
+    */</span>
+    <span class="n">page</span> <span class="o">=</span> <span class="n">get_page_from_freelist</span><span class="p">(</span><span class="n">gfp_mask</span><span class="o">|</span><span class="n">__GFP_HARDWALL</span><span class="p">,</span>
+            <span class="n">nodemask</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span>
+            <span class="n">zonelist</span><span class="p">,</span> <span class="n">high_zoneidx</span><span class="p">,</span> <span class="n">ALLOC_WMARK_LOW</span><span class="o">|</span><span class="n">ALLOC_CPUSET</span><span class="p">,</span>
+            <span class="n">preferred_zone</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="o">!</span><span class="n">page</span><span class="p">))</span>
+        <span class="n">page</span> <span class="o">=</span> <span class="n">__alloc_pages_slowpath</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span>
+                <span class="n">zonelist</span><span class="p">,</span> <span class="n">high_zoneidx</span><span class="p">,</span> <span class="n">nodemask</span><span class="p">,</span>
+                <span class="n">preferred_zone</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+
+    <span class="n">trace_mm_page_alloc</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">gfp_mask</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">page</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL</span><span class="p">(</span><span class="n">__alloc_pages_nodemask</span><span class="p">);</span></code></pre></div>
+
+<p>其中<em>get_page_from_freelist</em>是伙伴系统页分配里一个非常重要的函数，它通过标志集和分配阶来判断是否能够进行分配，如果可以，则发起实际的分配操作。</p>
+
+<h4 id="mmpageallocc-1">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span>
+<span class="nf">get_page_from_freelist</span><span class="p">(</span><span class="n">gfp_t</span> <span class="n">gfp_mask</span><span class="p">,</span> <span class="n">nodemask_t</span> <span class="o">*</span><span class="n">nodemask</span><span class="p">,</span>
+        <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">order</span><span class="p">,</span> <span class="k">struct</span> <span class="n">zonelist</span> <span class="o">*</span><span class="n">zonelist</span><span class="p">,</span>
+        <span class="kt">int</span> <span class="n">high_zoneidx</span><span class="p">,</span> <span class="kt">int</span> <span class="n">alloc_flags</span><span class="p">,</span>
+        <span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">preferred_zone</span><span class="p">,</span> <span class="kt">int</span> <span class="n">migratetype</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">zoneref</span> <span class="o">*</span><span class="n">z</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">classzone_idx</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">zone</span><span class="p">;</span>
+    <span class="n">nodemask_t</span> <span class="o">*</span><span class="n">allowednodes</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">zlc_active</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">did_zlc_setup</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="n">classzone_idx</span> <span class="o">=</span> <span class="n">zone_idx</span><span class="p">(</span><span class="n">preferred_zone</span><span class="p">);</span>
+<span class="nl">zonelist_scan:</span>
+    <span class="cm">/*
+     * 扫描zonelist，寻找具有足够空间的内存域
+     */</span>
+    <span class="n">for_each_zone_zonelist_nodemask</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span> <span class="n">zonelist</span><span class="p">,</span>
+                        <span class="n">high_zoneidx</span><span class="p">,</span> <span class="n">nodemask</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">NUMA_BUILD</span> <span class="o">&amp;&amp;</span> <span class="n">zlc_active</span> <span class="o">&amp;&amp;</span>
+            <span class="o">!</span><span class="n">zlc_zone_worth_trying</span><span class="p">(</span><span class="n">zonelist</span><span class="p">,</span> <span class="n">z</span><span class="p">,</span> <span class="n">allowednodes</span><span class="p">))</span>
+                <span class="k">continue</span><span class="p">;</span>
+        <span class="k">if</span> <span class="p">((</span><span class="n">alloc_flags</span> <span class="o">&amp;</span> <span class="n">ALLOC_CPUSET</span><span class="p">)</span> <span class="o">&amp;&amp;</span>
+            <span class="o">!</span><span class="n">cpuset_zone_allowed_softwall</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">gfp_mask</span><span class="p">))</span>
+                <span class="k">goto</span> <span class="n">try_next_zone</span><span class="p">;</span>
+
+        <span class="n">BUILD_BUG_ON</span><span class="p">(</span><span class="n">ALLOC_NO_WATERMARKS</span> <span class="o">&lt;</span> <span class="n">NR_WMARK</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">alloc_flags</span> <span class="o">&amp;</span> <span class="n">ALLOC_NO_WATERMARKS</span><span class="p">))</span> <span class="p">{</span>
+            <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">mark</span><span class="p">;</span>
+            <span class="kt">int</span> <span class="n">ret</span><span class="p">;</span>
+
+            <span class="n">mark</span> <span class="o">=</span> <span class="n">zone</span><span class="o">-&gt;</span><span class="n">watermark</span><span class="p">[</span><span class="n">alloc_flags</span> <span class="o">&amp;</span> <span class="n">ALLOC_WMARK_MASK</span><span class="p">];</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">zone_watermark_ok</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">mark</span><span class="p">,</span>
+                    <span class="n">classzone_idx</span><span class="p">,</span> <span class="n">alloc_flags</span><span class="p">))</span>
+                <span class="k">goto</span> <span class="n">try_this_zone</span><span class="p">;</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">zone_reclaim_mode</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+                <span class="k">goto</span> <span class="n">this_zone_full</span><span class="p">;</span>
+
+            <span class="n">ret</span> <span class="o">=</span> <span class="n">zone_reclaim</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">gfp_mask</span><span class="p">,</span> <span class="n">order</span><span class="p">);</span>
+            <span class="k">switch</span> <span class="p">(</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+            <span class="k">case</span> <span class="n">ZONE_RECLAIM_NOSCAN</span><span class="p">:</span>
+                <span class="cm">/* 不扫描 */</span>
+                <span class="k">goto</span> <span class="n">try_next_zone</span><span class="p">;</span>
+            <span class="k">case</span> <span class="n">ZONE_RECLAIM_FULL</span><span class="p">:</span>
+                <span class="cm">/* 扫描到了但是这个内存域不能使用 */</span>
+                <span class="k">goto</span> <span class="n">this_zone_full</span><span class="p">;</span>
+            <span class="nl">default:</span>
+                <span class="cm">/* 通过zone_watermark_ok水印判断是否足够 */</span>
+                <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">zone_watermark_ok</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">mark</span><span class="p">,</span>
+                        <span class="n">classzone_idx</span><span class="p">,</span> <span class="n">alloc_flags</span><span class="p">))</span>
+                    <span class="k">goto</span> <span class="n">this_zone_full</span><span class="p">;</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+
+<span class="nl">try_this_zone:</span>
+        <span class="c1">// ...
+</span><span class="nl">this_zone_full:</span>
+        <span class="c1">// ...
+</span><span class="nl">try_next_zone:</span>
+        <span class="c1">// ...
+</span>    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">NUMA_BUILD</span> <span class="o">&amp;&amp;</span> <span class="n">page</span> <span class="o">==</span> <span class="nb">NULL</span> <span class="o">&amp;&amp;</span> <span class="n">zlc_active</span><span class="p">))</span> <span class="p">{</span>
+        <span class="n">zlc_active</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+        <span class="k">goto</span> <span class="n">zonelist_scan</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">page</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p><em>zone_watermark_ok</em>函数用来检查标志，这个函数根据设置的标志判断是否能从给定的内存域内分配内存。这是一个比较重要的函数。</p>
+
+<p>在跟入<em>zone_watermark_ok</em>函数之前，需要定义一些函数使用的标志，用于控制到达各个水印指定的临界状态时的行为。</p>
+
+<h4 id="mmpageallocc-2">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define ALLOC_WMARK_MIN     WMARK_MIN
+#define ALLOC_WMARK_LOW     WMARK_LOW
+#define ALLOC_WMARK_HIGH    WMARK_HIGH
+#define ALLOC_NO_WATERMARKS 0x04
+</span>
+<span class="cp">#define ALLOC_WMARK_MASK    (ALLOC_NO_WATERMARKS-1)
+</span>
+<span class="cp">#define ALLOC_HARDER        0x10
+#define ALLOC_HIGH          0x20
+#define ALLOC_CPUSET        0x40</span></code></pre></div>
+
+<p>其中字段及其意义如下：</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>ALLOC_WMARK_MIN</td>
+      <td>使用pages_min水印</td>
+    </tr>
+    <tr>
+      <td>ALLOC_WMARK_LOW</td>
+      <td>使用pages_low水印</td>
+    </tr>
+    <tr>
+      <td>ALLOC_WMARK_HIGH</td>
+      <td>使用pages_high水印</td>
+    </tr>
+    <tr>
+      <td>ALLOC_NO_WATERMARKS</td>
+      <td>不检查水印</td>
+    </tr>
+    <tr>
+      <td>ALLOC_WMARK_MASK</td>
+      <td>获取水印的比特位</td>
+    </tr>
+    <tr>
+      <td>ALLOC_HARDER</td>
+      <td>试图更努力的分配，放宽限制</td>
+    </tr>
+    <tr>
+      <td>ALLOC_HIGH</td>
+      <td>设置了__GFP_HIGH</td>
+    </tr>
+    <tr>
+      <td>ALLOC_CPUSET</td>
+      <td>检查内存结点是否对应指定的CPU集合</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>前几个标志表示在判断页是否可分配时，需要考虑哪些水印。默认情况下，只有内存域包含页的数目至少为zone-&gt;pages_high时，才能分配页。</p>
+
+<p>我们再回到<em>get_page_from_freelist</em>函数，通过<em>zone_watermark_ok</em>得到查找的内存域是否能够分配可用的内存之后，如果成功，则走到<em>try_this_zone</em>。</p>
+
+<p>我们可以看看<em>try_this_zone</em>的代码：</p>
+
+<h4 id="mmpageallocc-3">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="nl">try_this_zone:</span>
+        <span class="n">page</span> <span class="o">=</span> <span class="n">buffered_rmqueue</span><span class="p">(</span><span class="n">preferred_zone</span><span class="p">,</span> <span class="n">zone</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span>
+                        <span class="n">gfp_mask</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">page</span><span class="p">)</span>
+            <span class="k">break</span><span class="p">;</span></code></pre></div>
+
+<p>我们看到如果内存域适用于分配内存，那么<em>buffered_rmqueue</em>试图分配所需的数目的页。当然，如果分配成功，则返回相应的页，否则选择备用列表的下一个内存域。</p>
+
+<h3 id="section-1">实际分配</h3>
+
+<p>我们从上面的代码可以看到，如果分配页成功的话，<em>__alloc_pages_nodemask</em>最后走到函数<em>__alloc_pages_slowpath</em>。这个函数的代码如下：</p>
+
+<h4 id="mmpageallocc-4">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span>
+<span class="nf">__alloc_pages_slowpath</span><span class="p">(</span><span class="n">gfp_t</span> <span class="n">gfp_mask</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">order</span><span class="p">,</span>
+    <span class="k">struct</span> <span class="n">zonelist</span> <span class="o">*</span><span class="n">zonelist</span><span class="p">,</span> <span class="k">enum</span> <span class="n">zone_type</span> <span class="n">high_zoneidx</span><span class="p">,</span>
+    <span class="n">nodemask_t</span> <span class="o">*</span><span class="n">nodemask</span><span class="p">,</span> <span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">preferred_zone</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">migratetype</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">const</span> <span class="n">gfp_t</span> <span class="n">wait</span> <span class="o">=</span> <span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">__GFP_WAIT</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">alloc_flags</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">pages_reclaimed</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">did_some_progress</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="n">p</span> <span class="o">=</span> <span class="n">current</span><span class="p">;</span>
+
+    <span class="cm">/* 检查阶是否大于系统最大阶 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">order</span> <span class="o">&gt;=</span> <span class="n">MAX_ORDER</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">WARN_ON_ONCE</span><span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">__GFP_NOWARN</span><span class="p">));</span>
+        <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">NUMA_BUILD</span> <span class="o">&amp;&amp;</span> <span class="p">(</span><span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">GFP_THISNODE</span><span class="p">)</span> <span class="o">==</span> <span class="n">GFP_THISNODE</span><span class="p">)</span>
+        <span class="k">goto</span> <span class="n">nopage</span><span class="p">;</span>
+
+<span class="nl">restart:</span>
+    <span class="cm">/* 唤醒所有的kswapd进程 */</span>
+    <span class="n">wake_all_kswapd</span><span class="p">(</span><span class="n">order</span><span class="p">,</span> <span class="n">zonelist</span><span class="p">,</span> <span class="n">high_zoneidx</span><span class="p">);</span>
+    <span class="cm">/* 唤醒进程之后设置gfp设置，这个地方更加复杂 */</span>
+    <span class="n">alloc_flags</span> <span class="o">=</span> <span class="n">gfp_to_alloc_flags</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">);</span>
+
+<span class="nl">rebalance:</span>
+    <span class="cm">/* 在goto nopage之前的尝试，再次查找空闲的页 */</span>
+    <span class="n">page</span> <span class="o">=</span> <span class="n">get_page_from_freelist</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">,</span>
+            <span class="n">nodemask</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">zonelist</span><span class="p">,</span>
+            <span class="n">high_zoneidx</span><span class="p">,</span> <span class="n">alloc_flags</span> <span class="o">&amp;</span> <span class="o">~</span><span class="n">ALLOC_NO_WATERMARKS</span><span class="p">,</span>
+            <span class="n">preferred_zone</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">page</span><span class="p">)</span>
+        <span class="k">goto</span> <span class="n">got_pg</span><span class="p">;</span>
+
+    <span class="cm">/* 如果完全不检查水印的话 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">alloc_flags</span> <span class="o">&amp;</span> <span class="n">ALLOC_NO_WATERMARKS</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">page</span> <span class="o">=</span> <span class="n">__alloc_pages_high_priority</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span>
+                <span class="n">zonelist</span><span class="p">,</span> <span class="n">high_zoneidx</span><span class="p">,</span> <span class="n">nodemask</span><span class="p">,</span>
+                <span class="n">preferred_zone</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">page</span><span class="p">)</span>
+            <span class="k">goto</span> <span class="n">got_pg</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* 无法平衡则goto nopage */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">wait</span><span class="p">)</span>
+        <span class="k">goto</span> <span class="n">nopage</span><span class="p">;</span>
+
+    <span class="cm">/* 如果page标志为PF_MEMALLOC */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">p</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">PF_MEMALLOC</span><span class="p">)</span>
+        <span class="k">goto</span> <span class="n">nopage</span><span class="p">;</span>
+
+    <span class="cm">/* 如果没有设置重复分配内存直到成功，则goto nopage */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">test_thread_flag</span><span class="p">(</span><span class="n">TIF_MEMDIE</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="p">(</span><span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">__GFP_NOFAIL</span><span class="p">))</span>
+        <span class="k">goto</span> <span class="n">nopage</span><span class="p">;</span>
+
+    <span class="cm">/* 直接申请页 */</span>
+    <span class="n">page</span> <span class="o">=</span> <span class="n">__alloc_pages_direct_reclaim</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span>
+                    <span class="n">zonelist</span><span class="p">,</span> <span class="n">high_zoneidx</span><span class="p">,</span>
+                    <span class="n">nodemask</span><span class="p">,</span>
+                    <span class="n">alloc_flags</span><span class="p">,</span> <span class="n">preferred_zone</span><span class="p">,</span>
+                    <span class="n">migratetype</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">did_some_progress</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">page</span><span class="p">)</span>
+        <span class="k">goto</span> <span class="n">got_pg</span><span class="p">;</span>
+
+    <span class="cm">/*
+     * 如果实在没有办法申请内存，考虑使用OOM
+     * OOM的意思为Out Of Memory
+     */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">did_some_progress</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">((</span><span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">__GFP_FS</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="p">(</span><span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">__GFP_NORETRY</span><span class="p">))</span> <span class="p">{</span>
+            <span class="cm">/* 如果oom_killer被关闭，则nopage */</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">oom_killer_disabled</span><span class="p">)</span>
+                <span class="k">goto</span> <span class="n">nopage</span><span class="p">;</span>
+            <span class="cm">/* 最后再尝试一次 */</span>
+            <span class="n">page</span> <span class="o">=</span> <span class="n">__alloc_pages_may_oom</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span>
+                    <span class="n">zonelist</span><span class="p">,</span> <span class="n">high_zoneidx</span><span class="p">,</span>
+                    <span class="n">nodemask</span><span class="p">,</span> <span class="n">preferred_zone</span><span class="p">,</span>
+                    <span class="n">migratetype</span><span class="p">);</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">page</span><span class="p">)</span>
+                <span class="k">goto</span> <span class="n">got_pg</span><span class="p">;</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">order</span> <span class="o">&gt;</span> <span class="n">PAGE_ALLOC_COSTLY_ORDER</span> <span class="o">&amp;&amp;</span>
+                        <span class="o">!</span><span class="p">(</span><span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">__GFP_NOFAIL</span><span class="p">))</span>
+                <span class="k">goto</span> <span class="n">nopage</span><span class="p">;</span>
+
+            <span class="k">goto</span> <span class="n">restart</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* 检查是否需要重试分配 */</span>
+    <span class="n">pages_reclaimed</span> <span class="o">+=</span> <span class="n">did_some_progress</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">should_alloc_retry</span><span class="p">(</span><span class="n">gfp_mask</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">pages_reclaimed</span><span class="p">))</span> <span class="p">{</span>
+        <span class="cm">/* Wait for some write requests to complete then retry */</span>
+        <span class="n">congestion_wait</span><span class="p">(</span><span class="n">BLK_RW_ASYNC</span><span class="p">,</span> <span class="n">HZ</span><span class="o">/</span><span class="mi">50</span><span class="p">);</span>
+        <span class="k">goto</span> <span class="n">rebalance</span><span class="p">;</span>
+    <span class="p">}</span>
+
+<span class="nl">nopage:</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">gfp_mask</span> <span class="o">&amp;</span> <span class="n">__GFP_NOWARN</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">printk_ratelimit</span><span class="p">())</span> <span class="p">{</span>
+        <span class="n">printk</span><span class="p">(</span><span class="n">KERN_WARNING</span> <span class="s">"%s: page allocation failure."</span>
+            <span class="s">" order:%d, mode:0x%x</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span>
+            <span class="n">p</span><span class="o">-&gt;</span><span class="n">comm</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">gfp_mask</span><span class="p">);</span>
+        <span class="n">dump_stack</span><span class="p">();</span>
+        <span class="n">show_mem</span><span class="p">();</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="n">page</span><span class="p">;</span>
+<span class="nl">got_pg:</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">kmemcheck_enabled</span><span class="p">)</span>
+        <span class="n">kmemcheck_pagealloc_alloc</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">gfp_mask</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">page</span><span class="p">;</span>
+
+<span class="p">}</span></code></pre></div>
+
+<p>可以看到内核进行了许多的尝试，当尝试失败之后，会进入OOM（<em>out of memory</em>），如果我们跟进<em>__alloc_pages_may_oom</em>的话，可以看到函数<em>out_of_memory</em>，这个函数会查找使用内存过多的进程并杀死进程，这样就能够获得一些空闲的进程，之后重新申请并返回。</p>
+
+<p>如果杀死一个进程不一定能立即2^MAX_COSTLY_ORDER页的连续内存，因此如果当前要分配如此大的内存区，那么内核会放弃杀死所选进程，不执行杀死任务，而是goto nopage。</p>
+
+<p>kswapd进程是一个守护进程，交换守护进程的任务非常复杂，也许在有空的时候会继续笔记。</p>
+
+<h3 id="section-2">移除选择的页</h3>
+
+<p>如果内核找到了适当的内存域，具有足够的空间可供分配，但还有两件事需要完成。</p>
+
+<ol>
+  <li>必须判断找到的这些页是否是连续的。</li>
+  <li>必须按伙伴系统的方式从free_lists移除这些页，这可能需要分解并重排内存区。</li>
+</ol>
+
+<p>内核将这个工作交给<em>buffered_rmqueue</em>来处理，前面我们已经了解了<em>buffered_rmqueue</em>这个函数的作用，那么详细了解<em>buffered_rmqueue</em>之前，我们需要了解，当只需要分配一个页时，内核会进行优化，即分配阶为0的情形，这个页不是从伙伴系统只哦难过直接读取，而是从per-CPU的页缓存读取。</p>
+
+<p>我们直接看代码。</p>
+
+<h4 id="mmpageallocc-5">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span>
+<span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="nf">buffered_rmqueue</span><span class="p">(</span><span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">preferred_zone</span><span class="p">,</span>
+            <span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">zone</span><span class="p">,</span> <span class="kt">int</span> <span class="n">order</span><span class="p">,</span> <span class="n">gfp_t</span> <span class="n">gfp_flags</span><span class="p">,</span>
+            <span class="kt">int</span> <span class="n">migratetype</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">flags</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">cold</span> <span class="o">=</span> <span class="o">!!</span><span class="p">(</span><span class="n">gfp_flags</span> <span class="o">&amp;</span> <span class="n">__GFP_COLD</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="n">cpu</span><span class="p">;</span>
+
+<span class="nl">again:</span>
+    <span class="n">cpu</span>  <span class="o">=</span> <span class="n">get_cpu</span><span class="p">();</span>
+    <span class="cm">/* 是否阶为0，如果是则分配1页，则从per_cpu缓存中读取 */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">likely</span><span class="p">(</span><span class="n">order</span> <span class="o">==</span> <span class="mi">0</span><span class="p">))</span> <span class="p">{</span>
+        <span class="k">struct</span> <span class="n">per_cpu_pages</span> <span class="o">*</span><span class="n">pcp</span><span class="p">;</span>
+        <span class="k">struct</span> <span class="n">list_head</span> <span class="o">*</span><span class="n">list</span><span class="p">;</span>
+
+        <span class="n">pcp</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">zone_pcp</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">cpu</span><span class="p">)</span><span class="o">-&gt;</span><span class="n">pcp</span><span class="p">;</span>
+        <span class="n">list</span> <span class="o">=</span> <span class="o">&amp;</span><span class="n">pcp</span><span class="o">-&gt;</span><span class="n">lists</span><span class="p">[</span><span class="n">migratetype</span><span class="p">];</span>
+        <span class="n">local_irq_save</span><span class="p">(</span><span class="n">flags</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">list_empty</span><span class="p">(</span><span class="n">list</span><span class="p">))</span> <span class="p">{</span>
+            <span class="cm">/* 选择了适当的per-CPU列表之后，重新填充缓存 */</span>
+            <span class="n">pcp</span><span class="o">-&gt;</span><span class="n">count</span> <span class="o">+=</span> <span class="n">rmqueue_bulk</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span>
+                    <span class="n">pcp</span><span class="o">-&gt;</span><span class="n">batch</span><span class="p">,</span> <span class="n">list</span><span class="p">,</span>
+                    <span class="n">migratetype</span><span class="p">,</span> <span class="n">cold</span><span class="p">);</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">list_empty</span><span class="p">(</span><span class="n">list</span><span class="p">)))</span>
+                <span class="k">goto</span> <span class="n">failed</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="cm">/* 如果分配标志设置了GFP_CODE，那么从per-CPU缓存取得冷页 */</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">cold</span><span class="p">)</span>
+            <span class="n">page</span> <span class="o">=</span> <span class="n">list_entry</span><span class="p">(</span><span class="n">list</span><span class="o">-&gt;</span><span class="n">prev</span><span class="p">,</span> <span class="k">struct</span> <span class="n">page</span><span class="p">,</span> <span class="n">lru</span><span class="p">);</span>
+        <span class="k">else</span>
+            <span class="n">page</span> <span class="o">=</span> <span class="n">list_entry</span><span class="p">(</span><span class="n">list</span><span class="o">-&gt;</span><span class="n">next</span><span class="p">,</span> <span class="k">struct</span> <span class="n">page</span><span class="p">,</span> <span class="n">lru</span><span class="p">);</span>
+
+        <span class="n">list_del</span><span class="p">(</span><span class="o">&amp;</span><span class="n">page</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">);</span>
+        <span class="n">pcp</span><span class="o">-&gt;</span><span class="n">count</span><span class="o">--</span><span class="p">;</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="cm">/* 如果需要分配更多(&gt;1)的页 */</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">gfp_flags</span> <span class="o">&amp;</span> <span class="n">__GFP_NOFAIL</span><span class="p">))</span> <span class="p">{</span>
+            <span class="n">WARN_ON_ONCE</span><span class="p">(</span><span class="n">order</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">);</span>
+        <span class="p">}</span>
+        <span class="n">spin_lock_irqsave</span><span class="p">(</span><span class="o">&amp;</span><span class="n">zone</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">,</span> <span class="n">flags</span><span class="p">);</span>
+        <span class="cm">/* 从内存域的伙伴列表中选择适当的内存块
+           如果有必要，自动分解大块内存，将未用
+           的部分放回列表中
+
+           如果内存中有足够的内存但不是连续的
+           则失败，返回NULL指针
+        */</span>
+        <span class="n">page</span> <span class="o">=</span> <span class="n">__rmqueue</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+        <span class="n">spin_unlock</span><span class="p">(</span><span class="o">&amp;</span><span class="n">zone</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">page</span><span class="p">)</span>
+            <span class="k">goto</span> <span class="n">failed</span><span class="p">;</span>
+        <span class="n">__mod_zone_page_state</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">NR_FREE_PAGES</span><span class="p">,</span> <span class="o">-</span><span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">order</span><span class="p">));</span>
+    <span class="p">}</span>
+
+    <span class="n">__count_zone_vm_events</span><span class="p">(</span><span class="n">PGALLOC</span><span class="p">,</span> <span class="n">zone</span><span class="p">,</span> <span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">order</span><span class="p">);</span>
+    <span class="n">zone_statistics</span><span class="p">(</span><span class="n">preferred_zone</span><span class="p">,</span> <span class="n">zone</span><span class="p">);</span>
+    <span class="n">local_irq_restore</span><span class="p">(</span><span class="n">flags</span><span class="p">);</span>
+    <span class="n">put_cpu</span><span class="p">();</span>
+
+    <span class="n">VM_BUG_ON</span><span class="p">(</span><span class="n">bad_range</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">page</span><span class="p">));</span>
+    <span class="cm">/* 对页进行检查，确保分配之后分配器处于理想状态
+       特别地，这意味着现存的映射中不能使用该页
+       也没有设置不正确的标志
+    */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">prep_new_page</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">gfp_flags</span><span class="p">))</span>
+        <span class="k">goto</span> <span class="n">again</span><span class="p">;</span>
+    <span class="k">return</span> <span class="n">page</span><span class="p">;</span>
+
+<span class="nl">failed:</span>
+    <span class="n">local_irq_restore</span><span class="p">(</span><span class="n">flags</span><span class="p">);</span>
+    <span class="n">put_cpu</span><span class="p">();</span>
+    <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>当申请的页大于1的时候，主要的函数使用<em>__rmqueue</em>，这个函数从伙伴列表中选择适当的内存块，如果有必要则自动分解大块内存。</p>
+
+<h4 id="mmpageallocc-6">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="nf">__rmqueue</span><span class="p">(</span><span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">zone</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">order</span><span class="p">,</span>
+                        <span class="kt">int</span> <span class="n">migratetype</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">;</span>
+
+<span class="nl">retry_reserve:</span>
+    <span class="n">page</span> <span class="o">=</span> <span class="n">__rmqueue_smallest</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="o">!</span><span class="n">page</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">migratetype</span> <span class="o">!=</span> <span class="n">MIGRATE_RESERVE</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">page</span> <span class="o">=</span> <span class="n">__rmqueue_fallback</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">page</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">migratetype</span> <span class="o">=</span> <span class="n">MIGRATE_RESERVE</span><span class="p">;</span>
+            <span class="k">goto</span> <span class="n">retry_reserve</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="n">trace_mm_page_alloc_zone_locked</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+    <span class="k">return</span> <span class="n">page</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>这个函数主要调用了<em>__rmqueue_smallest</em>函数。<em>__rmqueue_smallest</em>扫描页的列表，直至找到适当的连续内存块。在这样做的时候，可以按照之前的描述拆分伙伴，如果指定的迁移列表不能满足分配需求，则尝试<em>__rmqueue_fallback</em>函数尝试其他迁移列表。</p>
+
+<h4 id="mmpageallocc-7">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span>
+<span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="nf">__rmqueue_smallest</span><span class="p">(</span><span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">zone</span><span class="p">,</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">order</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">migratetype</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">current_order</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">free_area</span> <span class="o">*</span> <span class="n">area</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">;</span>
+
+    <span class="k">for</span> <span class="p">(</span><span class="n">current_order</span> <span class="o">=</span> <span class="n">order</span><span class="p">;</span> <span class="n">current_order</span> <span class="o">&lt;</span> <span class="n">MAX_ORDER</span><span class="p">;</span> <span class="o">++</span><span class="n">current_order</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">area</span> <span class="o">=</span> <span class="o">&amp;</span><span class="p">(</span><span class="n">zone</span><span class="o">-&gt;</span><span class="n">free_area</span><span class="p">[</span><span class="n">current_order</span><span class="p">]);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">list_empty</span><span class="p">(</span><span class="o">&amp;</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">free_list</span><span class="p">[</span><span class="n">migratetype</span><span class="p">]))</span>
+            <span class="k">continue</span><span class="p">;</span>
+
+        <span class="n">page</span> <span class="o">=</span> <span class="n">list_entry</span><span class="p">(</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">free_list</span><span class="p">[</span><span class="n">migratetype</span><span class="p">].</span><span class="n">next</span><span class="p">,</span>
+                            <span class="k">struct</span> <span class="n">page</span><span class="p">,</span> <span class="n">lru</span><span class="p">);</span>
+        <span class="n">list_del</span><span class="p">(</span><span class="o">&amp;</span><span class="n">page</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">);</span>
+        <span class="cm">/* 设置page标志为PG_buddy，表示不在伙伴系统内 */</span>
+        <span class="n">rmv_page_order</span><span class="p">(</span><span class="n">page</span><span class="p">);</span>
+        <span class="n">area</span><span class="o">-&gt;</span><span class="n">nr_free</span><span class="o">--</span><span class="p">;</span>
+        <span class="n">expand</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">page</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">current_order</span><span class="p">,</span> <span class="n">area</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+        <span class="k">return</span> <span class="n">page</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>可以看到<em>__rmqueue_smallest</em>函数的代码不是很长，也很清楚，从当前的阶到最高阶逐步尝试。这很容易理解，如果尝试第2阶，没有连续的内存，那么很可能高阶如第3阶有可用的空闲的连续内存。</p>
+
+<p>如果需要分配的内存块长度小于所选择的连续页范围，即如果因为没有更小的适当的内存块可用，而从较高的内存阶分配了一块内存，那么该内存块必须按照伙伴系统分裂成更小的快，这是通过<em>expand</em>函数完成的。</p>
+
+<h4 id="mmpageallocc-8">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="kt">void</span> <span class="nf">expand</span><span class="p">(</span><span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">zone</span><span class="p">,</span> <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">low</span><span class="p">,</span> <span class="kt">int</span> <span class="n">high</span><span class="p">,</span> <span class="k">struct</span> <span class="n">free_area</span> <span class="o">*</span><span class="n">area</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">migratetype</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">size</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="n">high</span><span class="p">;</span>
+
+    <span class="k">while</span> <span class="p">(</span><span class="n">high</span> <span class="o">&gt;</span> <span class="n">low</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">area</span><span class="o">--</span><span class="p">;</span>
+        <span class="n">high</span><span class="o">--</span><span class="p">;</span>
+        <span class="n">size</span> <span class="o">&gt;&gt;=</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="n">VM_BUG_ON</span><span class="p">(</span><span class="n">bad_range</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">page</span><span class="p">[</span><span class="n">size</span><span class="p">]));</span>
+        <span class="n">list_add</span><span class="p">(</span><span class="o">&amp;</span><span class="n">page</span><span class="p">[</span><span class="n">size</span><span class="p">].</span><span class="n">lru</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">free_list</span><span class="p">[</span><span class="n">migratetype</span><span class="p">]);</span>
+        <span class="n">area</span><span class="o">-&gt;</span><span class="n">nr_free</span><span class="o">++</span><span class="p">;</span>
+        <span class="n">set_page_order</span><span class="p">(</span><span class="o">&amp;</span><span class="n">page</span><span class="p">[</span><span class="n">size</span><span class="p">],</span> <span class="n">high</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span></code></pre></div>
+
+<p>循环中各个步骤都调用了<em>set_page_order</em>函数，对于回收到伙伴系统的内存区，这个函数第将第一个<em>struct page</em>实例的<em>private</em>标志设置为当前的分配阶，并设置页的<em>PG_buddy</em>标志位，表示这个内存块由伙伴系统管理。</p>
+
+<p>再回到<em>__rmqueue</em>函数，如果找不到可用的内存块，则继续再其他分配阶中查找可用的内存块，则调用了<em>__rmqueue_fallback</em>函数。</p>
+
+<h4 id="mmpageallocc-9">&lt;mm/page_alloc.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span>
+<span class="nf">__rmqueue_fallback</span><span class="p">(</span><span class="k">struct</span> <span class="n">zone</span> <span class="o">*</span><span class="n">zone</span><span class="p">,</span>
+                   <span class="kt">int</span> <span class="n">order</span><span class="p">,</span>
+                   <span class="kt">int</span> <span class="n">start_migratetype</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">struct</span> <span class="n">free_area</span> <span class="o">*</span> <span class="n">area</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">current_order</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">migratetype</span><span class="p">,</span> <span class="n">i</span><span class="p">;</span>
+
+    <span class="cm">/* 从最高阶反向遍历 */</span>
+    <span class="k">for</span> <span class="p">(</span><span class="n">current_order</span> <span class="o">=</span> <span class="n">MAX_ORDER</span><span class="o">-</span><span class="mi">1</span><span class="p">;</span> <span class="n">current_order</span> <span class="o">&gt;=</span> <span class="n">order</span><span class="p">;</span>
+                        <span class="o">--</span><span class="n">current_order</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="n">MIGRATE_TYPES</span> <span class="o">-</span> <span class="mi">1</span><span class="p">;</span> <span class="n">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">migratetype</span> <span class="o">=</span> <span class="n">fallbacks</span><span class="p">[</span><span class="n">start_migratetype</span><span class="p">][</span><span class="n">i</span><span class="p">];</span>
+
+            <span class="cm">/* 如果有必要，则在后面处理 MIGRATE_RESERVE */</span>
+            <span class="cm">/* 如果尝试了所有手段仍然无法分配
+               则从MIGRATE_RESERVE列表满足分配 
+            */</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">migratetype</span> <span class="o">==</span> <span class="n">MIGRATE_RESERVE</span><span class="p">)</span>
+                <span class="k">continue</span><span class="p">;</span>
+
+            <span class="n">area</span> <span class="o">=</span> <span class="o">&amp;</span><span class="p">(</span><span class="n">zone</span><span class="o">-&gt;</span><span class="n">free_area</span><span class="p">[</span><span class="n">current_order</span><span class="p">]);</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">list_empty</span><span class="p">(</span><span class="o">&amp;</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">free_list</span><span class="p">[</span><span class="n">migratetype</span><span class="p">]))</span>
+                <span class="k">continue</span><span class="p">;</span>
+
+            <span class="n">page</span> <span class="o">=</span> <span class="n">list_entry</span><span class="p">(</span><span class="n">area</span><span class="o">-&gt;</span><span class="n">free_list</span><span class="p">[</span><span class="n">migratetype</span><span class="p">].</span><span class="n">next</span><span class="p">,</span>
+                    <span class="k">struct</span> <span class="n">page</span><span class="p">,</span> <span class="n">lru</span><span class="p">);</span>
+            <span class="n">area</span><span class="o">-&gt;</span><span class="n">nr_free</span><span class="o">--</span><span class="p">;</span>
+
+            <span class="cm">/*
+               如果分解一个大的内存块，则将所有空闲页移动到优先选用的分配列表
+               如果内核在备用列表中分配可回收内存块，则会更为积极的取得空闲页
+               的所有权
+             */</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">unlikely</span><span class="p">(</span><span class="n">current_order</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="n">pageblock_order</span> <span class="o">&gt;&gt;</span> <span class="mi">1</span><span class="p">))</span> <span class="o">||</span>
+                    <span class="n">start_migratetype</span> <span class="o">==</span> <span class="n">MIGRATE_RECLAIMABLE</span> <span class="o">||</span>
+                    <span class="n">page_group_by_mobility_disabled</span><span class="p">)</span> <span class="p">{</span>
+                <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">pages</span><span class="p">;</span>
+                <span class="n">pages</span> <span class="o">=</span> <span class="n">move_freepages_block</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">page</span><span class="p">,</span>
+                                <span class="n">start_migratetype</span><span class="p">);</span>
+
+                <span class="cm">/* 如果大内存超过一半是空闲的，则主张对整个大内存块的所有权 */</span>
+                <span class="k">if</span> <span class="p">(</span><span class="n">pages</span> <span class="o">&gt;=</span> <span class="p">(</span><span class="mi">1</span> <span class="o">&lt;&lt;</span> <span class="p">(</span><span class="n">pageblock_order</span><span class="o">-</span><span class="mi">1</span><span class="p">))</span> <span class="o">||</span>
+                        <span class="n">page_group_by_mobility_disabled</span><span class="p">)</span>
+                    <span class="n">set_pageblock_migratetype</span><span class="p">(</span><span class="n">page</span><span class="p">,</span>
+                                <span class="n">start_migratetype</span><span class="p">);</span>
+
+                <span class="n">migratetype</span> <span class="o">=</span> <span class="n">start_migratetype</span><span class="p">;</span>
+            <span class="p">}</span>
+
+            <span class="cm">/* 从空闲列表中移除页 */</span>
+            <span class="n">list_del</span><span class="p">(</span><span class="o">&amp;</span><span class="n">page</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">);</span>
+            <span class="n">rmv_page_order</span><span class="p">(</span><span class="n">page</span><span class="p">);</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">current_order</span> <span class="o">&gt;=</span> <span class="n">pageblock_order</span><span class="p">)</span>
+                <span class="n">change_pageblock_range</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">current_order</span><span class="p">,</span>
+                            <span class="n">start_migratetype</span><span class="p">);</span>
+            <span class="cm">/*
+              如果已经改变了迁移类型，使用expand使用新的迁移类型
+              将剩余部分放置在新的列表中
+            */</span>
+            <span class="n">expand</span><span class="p">(</span><span class="n">zone</span><span class="p">,</span> <span class="n">page</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">current_order</span><span class="p">,</span>
+                   <span class="n">area</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+
+            <span class="n">trace_mm_page_alloc_extfrag</span><span class="p">(</span><span class="n">page</span><span class="p">,</span> <span class="n">order</span><span class="p">,</span> <span class="n">current_order</span><span class="p">,</span>
+                <span class="n">start_migratetype</span><span class="p">,</span> <span class="n">migratetype</span><span class="p">);</span>
+
+            <span class="k">return</span> <span class="n">page</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>这个函数中重要的是，函数将会按照分配阶<strong>从大到小</strong>的遍历，这与通常的策略相反，如果无法避免分配迁移类型不同的内存块，那么就分配一个尽可能大的内存块，如果优先考虑小的内存块，那么更容易引起内存碎片。</p>
+
+<p>MIGRATE_RESERVE立表用于紧急的内存分配，需要特殊处理，如果尝试了所有的手段依旧无法获得内存，则从MIGRATE_RESERVE列表中获取，而不是立即出现异常。</p>
+
+<p>成功后，内核将内存块从列表中移除，并使用<em>expand</em>将其中未用部分还给伙伴系统。</p>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#页">#页</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#分配页">#分配页</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#伙伴系统">#伙伴系统</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/read-and-write-spin-lock/" class="pre">&lt; 读/写自旋锁</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/exception/" class="next">异常定义 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm_manage内存管理_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章分配页写于2014年05月04日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

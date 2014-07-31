@@ -1,0 +1,574 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>内存管理区|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 内存管理区" name="description"/>
+  <meta content="内存,UMA,NUMA,冷热页,内存域,内存管理区," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/pglist-data-and-zone/" />
+  <meta property="og:title" content="内存管理区" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 内存管理区" />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">内存管理区</div>
+
+  <div class="content mm_manage内存管理_content_css">
+    <p>我们习惯性的认为计算机内存是一种均匀、共享的资源。在忽略硬件高速缓存作用的情况下，我们期望内存单元无论在何处，也不管CPU在何处，CPU对内存单元的访问都需要相同的时间。可惜事实并不如此。实际上，给定的CPU对不同内存单元的访问时间可能不一样。系统的物理内存被分为好几个结点。</p>
+
+<p>内存划分为<strong>结点</strong>(<em>node</em>)，每个结点关联到系统中的一个处理器，在内核中表示为<em>pg_data_t</em>的实例。各个结点又划分为<strong>内存域</strong>（<em>Zone</em>），这是内存的进一步细分。大致结构如下：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/zonelist.png" alt="numa" style="max-width:500px" /></p>
+
+<p class="center">内存管理区示意图</p>
+
+<p>在一个理想的计算机体系结构中，一个页框就是一个内存存储单元，可以用于任何事情，例如存放内核数据和用户数据、缓冲磁盘数据等等。但实际上计算机体系结构有硬件的制约，这限制了页框可以使用的方式，尤其是Linux内核必须处理80x86体系结构的两种硬件约束：</p>
+
+<ol>
+  <li>ISA总线的直接内存存取（<em>DMA</em>）处理有一个严格的限制，它们只能对RAM的前16MB寻址。</li>
+  <li>在具有大容量RAM的现代32位计算机中，CPU不能直接访问所有的物理内存，因为线性地址空间太小。</li>
+</ol>
+
+<p>Linux把每个内存结点的物理内存划分为3个管理区，ZONE_DMA、ZONE_NORMAL、ZONE_HIGHMEM。其范围分别为：</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>ZONE_DMA</td>
+      <td>低于16MB的内存页框</td>
+    </tr>
+    <tr>
+      <td>ZONE_NORMAL</td>
+      <td>高于16MB但地狱896MB的内存页框</td>
+    </tr>
+    <tr>
+      <td>ZONE_HIGHMEM</td>
+      <td>高于896MB的内存页框</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>内核引入了下内存域描述符（<em>zone_type</em>）列常量枚举系统中的所有内存域，去掉注释代码如下：</p>
+
+<h4 id="includelinuxmmzoneh">&lt;include/linux/mmzone.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">enum</span> <span class="n">zone_type</span> <span class="p">{</span>
+<span class="cp">#ifdef CONFIG_ZONE_DMA
+</span>    <span class="n">ZONE_DMA</span><span class="p">,</span>
+<span class="cp">#endif
+#ifdef CONFIG_ZONE_DMA32
+</span>    <span class="n">ZONE_DMA32</span><span class="p">,</span>
+<span class="cp">#endif
+</span>    <span class="n">ZONE_NORMAL</span><span class="p">,</span>
+<span class="cp">#ifdef CONFIG_HIGHMEM
+</span>    <span class="n">ZONE_HIGHMEM</span><span class="p">,</span>
+<span class="cp">#endif
+</span>    <span class="n">ZONE_MOVABLE</span><span class="p">,</span>
+    <span class="n">__MAX_NR_ZONES</span>
+<span class="p">};</span></code></pre></div>
+
+<p>其中字段名和说明如下：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>ZONE_DMA</td>
+      <td>标记和式DMA的内存域，该区域的长度依赖于处理器的类型</td>
+    </tr>
+    <tr>
+      <td>ZONE_DMA32</td>
+      <td>标记了使用32位地址字可寻之、适合DMA的内存域。32位机器上此标志为空</td>
+    </tr>
+    <tr>
+      <td>ZONE_NORMAL</td>
+      <td>标记了可直接映射到内核段的普通内存域，这是所有体系结构上都会保证存在的唯一内存域，但无法保证该地址范围对应了实际的物理内存。</td>
+    </tr>
+    <tr>
+      <td>ZONE_HIGHMEM</td>
+      <td>标记了超出内核段的物理内存。在编译的时候可以配置，例如64位计算机并不需要高端地址内存域</td>
+    </tr>
+    <tr>
+      <td>ZONE_MOVABLE</td>
+      <td>伪内存域，防止物理内存碎片的机制中需要使用该内存域</td>
+    </tr>
+    <tr>
+      <td>MAX_NR_ZONES</td>
+      <td>充当结束标记，在内核想要迭代系统中的所有内存域时会使用这个变量</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>各个内存域都关联了一个数组，用来组织属于该内存域的物理内存页，内核中称为页帧。对每个页帧，都分配一个<em>struct page</em>实例以及所需的管理数据。各个内存结点保存在一个单链表中，供内核遍历。</p>
+
+<h3 id="section">结点</h3>
+
+<p>pglist_data_t时用于表示结点的基本元素，定义如下：</p>
+
+<h4 id="includelinuxmmzoneh-1">&lt;include/linux/mmzone.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">typedef</span> <span class="k">struct</span> <span class="n">pglist_data</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">zone</span> <span class="n">node_zones</span><span class="p">[</span><span class="n">MAX_NR_ZONES</span><span class="p">];</span>
+    <span class="k">struct</span> <span class="n">zonelist</span> <span class="n">node_zonelists</span><span class="p">[</span><span class="n">MAX_ZONELISTS</span><span class="p">];</span>
+    <span class="kt">int</span> <span class="n">nr_zones</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_FLAT_NODE_MEM_MAP </span><span class="cm">/* means !SPARSEMEM */</span><span class="cp">
+</span>    <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">node_mem_map</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_CGROUP_MEM_RES_CTLR
+</span>    <span class="k">struct</span> <span class="n">page_cgroup</span> <span class="o">*</span><span class="n">node_page_cgroup</span><span class="p">;</span>
+<span class="cp">#endif
+#endif
+</span>    <span class="k">struct</span> <span class="n">bootmem_data</span> <span class="o">*</span><span class="n">bdata</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_MEMORY_HOTPLUG
+</span>    <span class="n">spinlock_t</span> <span class="n">node_size_lock</span><span class="p">;</span>
+<span class="cp">#endif
+</span>    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">node_start_pfn</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">node_present_pages</span><span class="p">;</span> <span class="cm">/* 物理页的总数 * /
+    unsigned long node_spanned_pages; /* 物理页总长度，包含洞 */</span>
+    <span class="kt">int</span> <span class="n">node_id</span><span class="p">;</span>
+    <span class="n">wait_queue_head_t</span> <span class="n">kswapd_wait</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="n">kswapd</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">kswapd_max_order</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">pg_data_t</span><span class="p">;</span></code></pre></div>
+
+<p>其字段说明如下：</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>node_zone</td>
+      <td>是一个数组，包含了结点中各内存域的数据结构</td>
+    </tr>
+    <tr>
+      <td>node_zonelists</td>
+      <td>指定了备用结点及其内存域的列表</td>
+    </tr>
+    <tr>
+      <td>nr_zones</td>
+      <td>结点中不同的内存域的数目</td>
+    </tr>
+    <tr>
+      <td>node_mem_map</td>
+      <td>指向page实例数组的指针</td>
+    </tr>
+    <tr>
+      <td>bdata</td>
+      <td>指向自举内存分配器数据结构的实例</td>
+    </tr>
+    <tr>
+      <td>node_start_pfn</td>
+      <td>是该NUMA结点的第一个页帧的逻辑变好，每个页帧的变好都是全局统一的</td>
+    </tr>
+    <tr>
+      <td>node_id</td>
+      <td>全局结点ID，系统中的NUMA结点都从0开始编号</td>
+    </tr>
+    <tr>
+      <td>kswapd_wait</td>
+      <td>交换守护进程（<em>swap daemon</em>）的等待队列，在将页帧换出结点是会用到</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>在《深入Linux内核架构中》，pglist_data结构体的代码里有pgdata_next字段，用于指向下一个pglist_data结构的指针，但是在某个版本中去掉了。使用<em>node_online_map</em>也可以找到下一个pgdata的信息。</p>
+
+<h4 id="includelinuxnodemaskh">&lt;include/linux/nodemask.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define node_online_map     node_states[N_ONLINE]</span></code></pre></div>
+
+<p><a href="http://www.gelato.unsw.edu.au/archives/linux-ia64/0509/15528.html">具体提交在此</a>，邮件里的说明摘录如下：</p>
+
+<blockquote>
+  <p>This patch is to remove pgdat link list from pgdat structure, 
+because I think it is redundant.<br />
+In the current implementation, pgdat structure has this link list.<br /><br />
+struct pglist_data{struct pglist_data *pgdat_next;}<br /><br />
+This is used for searching other zones and nodes by for_each_pgdat and for_each_zone macros. <br />
+So, if a node is hot added, the system has to not only set bit of node_online_map, but also connect this for new node.<br />
+However, all of pgdat linklist user would like to know just
+next (online) node. So, I think node_online_map is enough information<br />
+for them to find other nodes. And hot add/remove code will be simpler.<br /></p>
+</blockquote>
+
+<h3 id="section-1">结点状态管理</h3>
+
+<p>如果系统中结点多于一个，内核会维护一个位图，用以提供各个结点的状态信息，状态是用位掩码指定的，可使用下列的值：</p>
+
+<h4 id="includelinuxnodemaskh-1">&lt;include/linux/nodemask.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">enum</span> <span class="n">node_states</span> <span class="p">{</span>
+    <span class="n">N_POSSIBLE</span><span class="p">,</span>
+    <span class="n">N_ONLINE</span><span class="p">,</span>
+    <span class="n">N_NORMAL_MEMORY</span><span class="p">,</span>
+<span class="cp">#ifdef CONFIG_HIGHMEM
+</span>    <span class="n">N_HIGH_MEMORY</span><span class="p">,</span>
+<span class="cp">#else
+</span>    <span class="n">N_HIGH_MEMORY</span> <span class="o">=</span> <span class="n">N_NORMAL_MEMORY</span><span class="p">,</span>
+<span class="cp">#endif
+</span>    <span class="n">N_CPU</span><span class="p">,</span>
+    <span class="n">NR_NODE_STATES</span>
+<span class="p">};</span></code></pre></div>
+
+<p>其中一些字段的意义为：</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>N_POSSIBLE</td>
+      <td>结点在某个时候可能变为联机/在线</td>
+    </tr>
+    <tr>
+      <td>N_ONLINE</td>
+      <td>结点是联机/在线的</td>
+    </tr>
+    <tr>
+      <td>N_NORMAL_MEMORY</td>
+      <td>结点有普通内存域</td>
+    </tr>
+    <tr>
+      <td>N_HIGH_MEMORY</td>
+      <td>结点有普通内存域或高端内存域</td>
+    </tr>
+    <tr>
+      <td>N_CPU</td>
+      <td>结点有一个或多个CPU</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3 id="section-2">内存管理区</h3>
+
+<p>内存管理区也可以称为内存域。内核使用<code>zone</code>结构表示一个内存管理区（或内存域），去掉一些注释之后定义如下：</p>
+
+<h4 id="includelinuxmmzoneh-2">&lt;include/linux/mmzone.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">zone</span> <span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">watermark</span><span class="p">[</span><span class="n">NR_WMARK</span><span class="p">];</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">percpu_drift_mark</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">lowmem_reserve</span><span class="p">[</span><span class="n">MAX_NR_ZONES</span><span class="p">];</span>
+
+<span class="cp">#ifdef CONFIG_NUMA
+</span>    <span class="kt">int</span> <span class="n">node</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">min_unmapped_pages</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">min_slab_pages</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">per_cpu_pageset</span>  <span class="o">*</span><span class="n">pageset</span><span class="p">[</span><span class="n">NR_CPUS</span><span class="p">];</span>
+<span class="cp">#else
+</span>    <span class="k">struct</span> <span class="n">per_cpu_pageset</span>  <span class="n">pageset</span><span class="p">[</span><span class="n">NR_CPUS</span><span class="p">];</span>
+<span class="cp">#endif
+</span>    <span class="n">spinlock_t</span>      <span class="n">lock</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_MEMORY_HOTPLUG
+</span>    <span class="n">seqlock_t</span>       <span class="n">span_seqlock</span><span class="p">;</span>
+<span class="cp">#endif
+</span>    <span class="k">struct</span> <span class="n">free_area</span>    <span class="n">free_area</span><span class="p">[</span><span class="n">MAX_ORDER</span><span class="p">];</span>
+
+<span class="cp">#ifndef CONFIG_SPARSEMEM
+</span>    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="o">*</span><span class="n">pageblock_flags</span><span class="p">;</span>
+<span class="cp">#endif </span><span class="cm">/* CONFIG_SPARSEMEM */</span><span class="cp">
+</span>
+
+    <span class="n">ZONE_PADDING</span><span class="p">(</span><span class="n">_pad1_</span><span class="p">)</span>
+
+    <span class="n">spinlock_t</span>      <span class="n">lru_lock</span><span class="p">;</span>   
+    <span class="k">struct</span> <span class="n">zone_lru</span> <span class="p">{</span>
+        <span class="k">struct</span> <span class="n">list_head</span> <span class="n">list</span><span class="p">;</span>
+    <span class="p">}</span> <span class="n">lru</span><span class="p">[</span><span class="n">NR_LRU_LISTS</span><span class="p">];</span>
+
+    <span class="k">struct</span> <span class="n">zone_reclaim_stat</span> <span class="n">reclaim_stat</span><span class="p">;</span>
+
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">pages_scanned</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">flags</span><span class="p">;</span>
+
+    <span class="n">atomic_long_t</span>       <span class="n">vm_stat</span><span class="p">[</span><span class="n">NR_VM_ZONE_STAT_ITEMS</span><span class="p">];</span>
+
+    <span class="kt">int</span> <span class="n">prev_priority</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">inactive_ratio</span><span class="p">;</span>
+
+
+    <span class="n">ZONE_PADDING</span><span class="p">(</span><span class="n">_pad2_</span><span class="p">)</span>
+    <span class="n">wait_queue_head_t</span>   <span class="o">*</span> <span class="n">wait_table</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">wait_table_hash_nr_entries</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">wait_table_bits</span><span class="p">;</span>
+
+    <span class="k">struct</span> <span class="n">pglist_data</span>  <span class="o">*</span><span class="n">zone_pgdat</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">zone_start_pfn</span><span class="p">;</span>
+
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">spanned_pages</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">present_pages</span><span class="p">;</span>
+    <span class="k">const</span> <span class="kt">char</span>      <span class="o">*</span><span class="n">name</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">____cacheline_internodealigned_in_smp</span><span class="p">;</span></code></pre></div>
+
+<p>其中一个重要的部分是ZONE_PADDING。ZONE_PADDING将一个内存域氛围几个部分，这是因为对zone结构体的访问非常频繁，在多处理系统上，通常会有不同的CPU试图同时访问结构成员。因此使用锁防止它们彼此干扰。而由于内核会经常对内存域访问，所以经常获取该结构的自旋锁<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。</p>
+
+<p><em>____cacheline_internodealigned_in_smp</em>是编译器关键字，用以实现最优的高速缓存对齐方式。另外，我们可以看到per_cpu_pageset结构体中的pageset[NR_CPUS]这个关键，在编译时，如果是NUMA计算机，则值是大于1，可能在2-32之间。如果是UMA系统的话，其值只等于1<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>。</p>
+
+<h3 id="section-3">冷热页</h3>
+
+<p>内存域（<em>zone</em>）结构体中的成员per_cpu_pageset和冷热页有关，我们可以看per_cpu_pageset结构体，代码如下：</p>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">per_cpu_pageset</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">per_cpu_pages</span> <span class="n">pcp</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_NUMA
+</span>    <span class="n">s8</span> <span class="n">expire</span><span class="p">;</span>
+<span class="cp">#endif
+#ifdef CONFIG_SMP
+</span>    <span class="n">s8</span> <span class="n">stat_threshold</span><span class="p">;</span>
+    <span class="n">s8</span> <span class="n">vm_stat_diff</span><span class="p">[</span><span class="n">NR_VM_ZONE_STAT_ITEMS</span><span class="p">];</span>
+<span class="cp">#endif
+</span><span class="p">}</span> <span class="n">____cacheline_aligned_in_smp</span><span class="p">;</span></code></pre></div>
+
+<p>在内核书籍里代码里per_cpu_pages pcp[2]中的pcp是一个数组，索引0对应热页，索引1对应冷页。在后续的Linux内核中被改动，被合并成一个单独的链表。具体改动的<a href="http://marc.info/?t=119492914200001&amp;r=1&amp;w=2">原因在此</a>。原因摘抄如下：</p>
+
+<blockquote>
+  <p>We have repeatedly discussed if the cold pages still have a point. <br />
+There is one way to join the two lists: Use a single list and put the cold pages at the end and the hot pages at the beginning. That way a single list can serve for both types of allocations.</p>
+</blockquote>
+
+<p>我们可以看这个结构体包含per_cpu_pages结构体，其内容如下：</p>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">per_cpu_pages</span> <span class="p">{</span>
+    <span class="kt">int</span> <span class="n">count</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">high</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">batch</span><span class="p">;</span>
+
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">lists</span><span class="p">[</span><span class="n">MIGRATE_PCPTYPES</span><span class="p">];</span>
+<span class="p">};</span></code></pre></div>
+
+<p>其中字段意义如下：</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>count</td>
+      <td>列表中的页</td>
+    </tr>
+    <tr>
+      <td>high</td>
+      <td>页数上限水印，需要的时候清空</td>
+    </tr>
+    <tr>
+      <td>batch</td>
+      <td>添加/删除多页块的时候，块的大小</td>
+    </tr>
+    <tr>
+      <td>list_head</td>
+      <td>页的链表</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>我们可以总结一下，pglist_data表示结点，zone表示一个内存域或者内存管理区。</p>
+
+<p>每个页描述符都有到内存结点和到结点内管理区（包含相应页框）的链接。为节省空间，这些链接的存放方式与典型的指针不同，而是被编码或索引存放在<em>flags</em>字段的高位。实际上，刻画页框的标志的数目是有限的，因此保留<em>flags</em>字段的最高位来编码特定内存结点和管理区号总是可能的。</p>
+
+<p>内核调用一个内存分配函数时，必须指明请求页框所在的管理区。内核通常指明它愿意使用哪个管理区。例如，如果一个页框必须直接映射再线性地址的第4个GB，但它又不用于ISA DMA的传输，那么内核不是再ZONE_NORMAL区就是在ZONE_DMA区请求一个页框。</p>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>zone-&gt;lock和zone-&gt;lru_lock。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>这个值不代表实际的CPU数，而是内核支持的最大CPU数。 <a href="#fnref:2" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#内存">#内存</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#UMA">#UMA</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#NUMA">#NUMA</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#冷热页">#冷热页</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#内存域">#内存域</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#内存管理区">#内存管理区</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/thread-page-table-and-kernel-page-table/" class="pre">&lt; 进程页表页和内核页表</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-and-page-table/" class="next">页表的数据结构 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm_manage内存管理_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章内存管理区写于2014年04月18日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

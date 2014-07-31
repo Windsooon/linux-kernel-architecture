@@ -1,0 +1,231 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>进程内核模式|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 进程内核模式..." name="description"/>
+  <meta content="进程实现," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/progress-model/" />
+  <meta property="og:title" content="进程内核模式" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 进程内核模式..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">进程内核模式</div>
+
+  <div class="content basic基础_content_css">
+    <p>内核把虚拟空间地址划分为两个部分，因此能够保护各个系统进程，使它们彼此隔离起来。所有的现代的CPU都提供了几种特权级别，进程可以驻留在某一个特权级别。每个特权级别都有一些限制，例如对执行某些指令的限制，或者访问特定空间的限制。</p>
+
+<p>各种不同的计算机有不同的特权级别限制，Linux通常只使用两种不同的状态：核心态和用户态。两种状态的关键差别在于对高于TASK_SIZE的地址区域的访问。简而言之，用户状态的进程无法访问高于TASK_SIZE地址的内存，也无法执行内核空间的代码，这个区域是内核的专用区别。当然，如果用户处于核心态的话，这种限制就不再满足。</p>
+
+<p>从用户态到核心态的切换通过<strong>系统调用</strong>的特定转换手段完成，且系统调用的执行因具体系统而不同。如果普通进程想要执行任何影响整个系统的操作，则只能借助于系统调用向内核发送请求。内核首先会进行权限的检查，执行所需操作，返回到用户态。</p>
+
+<p>进程是动态的实体，在系统内通常只有有限的生存期。内核本身并不是一个进程，而是进程的管理者。除此之外，系统还可能包括所谓的内核线程的特权进程，它们具有：</p>
+
+<ol>
+  <li>以内核态运行在内核地址空间。</li>
+  <li>不与用户直接交互。</li>
+  <li>通常在系统启动时创建，然后一直活跃直到关闭。</li>
+</ol>
+
+<p>不过在其他许多方面，内核线程更像是普通的用户层应用程序。</p>
+
+<p>除了代表用户程序执行代码以外，内核还可以由异步硬件中断激活，然后在上下文中运行。在中断上下文运行时，内核必须比正常情况更加谨慎，例如，不能进入睡眠状态。</p>
+
+<p>在单处理器系统中，任何时候只有一个进程在运行，要么处于用户态，要么处于内核态。如果运行在内核态，处理器就执行一些内核例程。例如一个进程处于用户态，发出系统调用之后，进入内核态，然后系统调用被执行。直到发生定时中断并且调度程序在内核态被激活，进程才恢复到用户态。</p>
+
+<p>可以有几种方式激活内核例程：</p>
+
+<ol>
+  <li>进程执行系统调用。</li>
+  <li>正在执行进程的CPU发生一个异常。</li>
+  <li>外围设备向CPU发出一个中断<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。</li>
+  <li>内核线程被执行。</li>
+</ol>
+
+<h3 id="section">进程实现</h3>
+
+<p>为了让内核管理进程，每个进程由一个进程描述符（<em>process descriptor</em>）表示。当内核暂停一个执行的进程，就把几个相关处理器寄存的内容保存在进程描述符中，这些寄存器包括：</p>
+
+<ol>
+  <li>程序计数器（PC）和栈指针（SP）寄存器。</li>
+  <li>通用寄存器。</li>
+  <li>浮点寄存器。</li>
+  <li>包含CPU状态信息的处理器控制寄存器。</li>
+  <li>用来跟踪进程对RAM访问的内存管理寄存器。</li>
+</ol>
+
+<p>当内核恢复一个进程，它用进程描述符中合适的字段来装载CPU寄存器。当进程不在CPU上执行时，它正在等待某一事件，例如外围设备的中断。<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup></p>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>例如读取文件，等待读取完毕之前，内核会暂时睡眠进程，直到I/O完毕之后，会产生一个中断，给进程发送信号进行通知。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>如等待键盘输入。 <a href="#fnref:2" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#进程实现">#进程实现</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/task-size/" class="pre">&lt; 进程地址空间</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/reentrant-kernel/" class="next">可重入内核 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments basic基础_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章进程内核模式写于2014年03月16日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

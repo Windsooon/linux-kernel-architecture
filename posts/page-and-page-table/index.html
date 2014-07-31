@@ -1,0 +1,288 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>页表的数据结构|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 页帧和页表的数据结构..." name="description"/>
+  <meta content="页帧,页表," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/page-and-page-table/" />
+  <meta property="og:title" content="页表的数据结构" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 页帧和页表的数据结构..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">页表的数据结构</div>
+
+  <div class="content mm_manage内存管理_content_css">
+    <p>在<a href="/linux-kernel-architecture/posts/system-paging-unit/">硬件中的分页</a>中记录了什么是页、页帧和页表，页帧的数据结构已经在<a href="/linux-kernel-architecture/posts/system-paging-unit/">内存管理</a>中详细记录了，这里主要记录一下页表的数据结构。</p>
+
+<p>从内存寻址的笔记可以知道，页表用于支持对大地址空间的快速、高效的管理。内核内存管理总是假定使用四级页表，而不管底层处理器是否这样，有的系统只使用两级分页系统，只要把高位的UPPER DIRECTORY和MIDDLE DIRECTORY指定为1即可。但内核还是保留指针，以便使用相同的代码。</p>
+
+<p>根据内核代码，我们把全局页表，上层页表，中间页表和页表分别定义为PGD、PUD、PMD和PTE。所以页表结构可以简单归纳如下。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/page.png" alt="system" style="max-width:500px" /></p>
+
+<p class="center">页表的简单结构</p>
+
+<p>图中说明了如何用比特位移来定义各字段分量的位置，这些分量根据不同的体系结构有所不同，比特位的具体数由<em>PAGE_SHIFT</em>指定。</p>
+
+<p><em>PMD_SHIFT</em>指定了页内偏移量和最后一级页表所需比特位的总数。这个值减去<em>PAGE_SHIFT</em>就可以得到PTE，也就是最后一级页表索引所需比特位的数目，这个值表名了一个中间层页表项管理的部分地址空间大小。各级页目录/页表中所能存储的指针数目，页可以通过宏定义确定<em>PTRS_PER_PGD</em>指定了全局页目录中项的数目，同理<em>PTRS_PER_PMD</em>指定了中间页的数目。</p>
+
+<p>两级页表的体系结构也会将<em>PTRS_PER_PMD</em>和<em>PTRS_PER_PUD</em>指定为1，使得内核的剩余部分感觉体系结构页提供了四级页表的转换，尽管实际上只有两级页表。中间层页目录和上层页目录实际上被消除掉了。因为其中只有一项。</p>
+
+<p><em>PTRS_PER_PMD</em>定义的代码如下：</p>
+
+<h4 id="includeasm-genericpgtable-nopmdh">&lt;include/asm-generic/pgtable-nopmd.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define PMD_SHIFT   PUD_SHIFT
+#define PTRS_PER_PMD    1
+#define PMD_SIZE    (1UL &lt;&lt; PMD_SHIFT)
+#define PMD_MASK    (~(PMD_SIZE-1))</span></code></pre></div>
+
+<p><em>PTRS_PUD_PMD</em>定义的代码如下：</p>
+
+<h4 id="includeasm-genericpgtable-nopudh">&lt;include/asm-generic/pgtable-nopud.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define PUD_SHIFT   PGDIR_SHIFT
+#define PTRS_PER_PUD    1
+#define PUD_SIZE    (1UL &lt;&lt; PUD_SHIFT)
+#define PUD_MASK    (~(PUD_SIZE-1))</span></code></pre></div>
+
+<p>可以看到默认情况下，上级和中间页表指定为1，内核提供了4个数据结构来表示页表项的结构：</p>
+
+<ol>
+  <li>pgd_t用于全局页表项。</li>
+  <li>pud_t用于上层页表项。</li>
+  <li>pmd_t用于中间页表项。</li>
+  <li>pte_t用于直接页表项。</li>
+</ol>
+
+<p>代码如下，有时候根据体系结构代码不一样：</p>
+
+<h4 id="includeasm-genericpageh">&lt;include/asm-generic/page.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">pte</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">pte_t</span><span class="p">;</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">pmd</span><span class="p">[</span><span class="mi">16</span><span class="p">];</span>
+<span class="p">}</span> <span class="n">pmd_t</span><span class="p">;</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">pgd</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">pgd_t</span><span class="p">;</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">pgprot</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">pgprot_t</span><span class="p">;</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">pgtable_t</span><span class="p">;</span></code></pre></div>
+
+<h3 id="pte">页表（<em>PTE</em>）的信息</h3>
+
+<p>最后一级页表中的项不仅包含了指向页的内存指针位置，还在上述的多余比特位包含了与页有关的附加信息，尽管这些数据是特定于CPU的，但至少提供了有关访问控制的一些信息。下面列举一些信息。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>_PAGE_PRESENT</td>
+      <td>指定了虚拟内存页是否存在于内存中，因为页不一定总在内存中</td>
+    </tr>
+    <tr>
+      <td>_PAGE_ACCESSED</td>
+      <td>CPU每次访问页时，会自动设置该值，内核会定期检查比特位，以确认页使用的活跃度，不经常使用的页会被换出，在读写或访问之后会设置该比特位</td>
+    </tr>
+    <tr>
+      <td>_PAGE_DIRTY</td>
+      <td>表示该页是否为脏页，即页的内容是否已经修改过</td>
+    </tr>
+    <tr>
+      <td>_PAGE_FILE</td>
+      <td>这个值与_PAGE_DIRTY相同，但用于不同的上下文，即页不在内存中的时候，不存在的页肯定不可能是脏的，因此可以重新解释该比特位，如果没有设置，则指向一个换出的页的位置</td>
+    </tr>
+    <tr>
+      <td>_PAGE_USER</td>
+      <td>如果设置了这个值，则允许用户空间代码访问该页</td>
+    </tr>
+    <tr>
+      <td>_PAGE_READ</td>
+      <td>指定了普通用户进程是否可读</td>
+    </tr>
+    <tr>
+      <td>_PAGE_WRITE</td>
+      <td>指定了普通用户进程是否可写</td>
+    </tr>
+    <tr>
+      <td>_PAGE_EXECUTE</td>
+      <td>指定了普通用户进程是否允许执行机器代码</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>创建页表项可以通过使用特定页表的创建函数，例如<em>pud_alloc</em>初始化一个完整的页表的内存，也可以使用如<em>pud_free</em>释放一个页表项的内存。可以通过<em>pte_page</em>获得一个页表。</p>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#页帧">#页帧</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#页表">#页表</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pglist-data-and-zone/" class="pre">&lt; 内存管理区</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/page-frame-allocator/" class="next">分区页框分配器 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm_manage内存管理_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章页表的数据结构写于2014年04月19日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,545 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>I/O中断处理|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 I/O中断处理..." name="description"/>
+  <meta content="PIC,中断处理," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/io-interrupt-and-data-struct/" />
+  <meta property="og:title" content="I/O中断处理" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 I/O中断处理..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">I/O中断处理</div>
+
+  <div class="content interrupt中断和异常_content_css">
+    <p>一般而言I/O中断处理程序必须足够灵活以给多个设备同时提供服务，例如在PCI总线的体系结构中，几个设备可以共享同一个IRQ线，这就意味着仅仅中断向量并不能说明所有问题。中断处理程序的灵活性是以两种不同的方式实现的：</p>
+
+<p><strong>IRQ共享</strong></p>
+
+<p>中断处理程序执行多个中断服务例程（<em>interrupt service routine，ISR</em>），每个ISR是一个与单独设备相关的函数，因为不可能预先直到哪个特定的设备产生IRQ，因此，每个ISR都被执行，以验证它的设备是否需要关注，如果是，当设备产生中断时，就执行需要执行的所有操作。</p>
+
+<p><strong>IRQ动态分配</strong></p>
+
+<p>一条IRQ线在可能的最后时刻才与一个设备驱动程序关联，例如光驱里的IRQ线只有在用户需要访问的时候才被分配，这样，即使几个硬件设备并不共享IRQ线，同一个IRQ向量页可以由这几个设备在不同时刻使用。</p>
+
+<p>当一个中断发生时，并不是所有的操作都具有相同的紧迫性，所以，把所有的操作都放进中断处理程序本身并不合适，需要时间长的非常重要的操作应该推后，因为当一个中断处理程序正在运行时，相应的IRQ线上发出的信号就暂时被忽略。</p>
+
+<p>更重要的时，中断处理程序时代表进程执行的，它代表的进程的状态总是应该处于TASK_RUNNING的状态，否则就可能出现系统僵死的情况，所以中断处理程序不能执行任何阻塞的操作，例如磁盘I/O操作，因此，Linxu把中断马上要执行的操作分为三类：</p>
+
+<ol>
+  <li>紧急的（<em>Critical</em>）：这样的操作如PIC应答中断，对PIC或设备控制器重编程或者修改由设备和处理器同时访问的数据结构都应该尽可能快额度执行。紧急操作要在一个中断处理程序内立即执行，而且必须在禁止可屏蔽中断的情况下。</li>
+  <li>非紧急的（<em>Noncritical</em>）：这样的操作如修改那些只有处理才会访问的数据结构，这些操作页要很快地完成，因此它们由中断处理程序立即执行，但必须时在开中断的情况下。</li>
+  <li>非紧急可延迟的（<em>Noncritical deferrable</em>），这样的操作例如把缓冲区的内容拷贝到某个进程的地址空间，例如把键盘缓冲区的内容发送到终端处理程序，这些操作可能被延迟较长的时间间隔而不影响内核操作。非紧急可延迟中断由单独的程序执行。</li>
+</ol>
+
+<p>不管引起中断的种类如何，所有I/O中断处理程序都执行四个相同的步骤：</p>
+
+<ol>
+  <li>在内核态堆栈中保存IRQ的值和寄存器的内容。</li>
+  <li>为正在给IRQ线服务的PIC发送一个应答，这允许PIC进一步发出中断。</li>
+  <li>执行共享这个IRQ的所有设备的中断服务例程ISR。</li>
+  <li>跳到<em>ret_from_intr()</em>的地址后终止。</li>
+</ol>
+
+<p>如下图：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/ioirq.png" alt="I/O IRQ" style="max-width:600px" /></p>
+
+<p class="center">I/O中断处理</p>
+
+<h3 id="section">中断向量</h3>
+
+<p>物理IRQ可以分配给32～238范围内的任何向量，不过Linux使用向量128实现系统调用。由于IBM PC兼容的体系结构要求，一些设备必须被静态地连接到指定的IRQ线，如下：</p>
+
+<ol>
+  <li>间隔定时设备必须连到IRQ0线<sup id="fnref:io"><a href="#fn:io" class="footnote">1</a></sup>。</li>
+  <li>从8259A PIC必须与IRQ2线相连<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>。</li>
+  <li>必须把外部数学协处理器连接到IRQ13线，虽然最近的80x86处理器不再使用这样的设备。</li>
+  <li>一般而言，一个I/O设备可以连接到有限个IRQ线。</li>
+</ol>
+
+<p>PIC的概念可以<a href="http://zh.wikipedia.org/wiki/PIC微控制器">点此连接</a>。Linux中的中断向量如下：</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>向量范围</th>
+      <th>用途</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0～19</td>
+      <td>非屏蔽中断和异常</td>
+    </tr>
+    <tr>
+      <td>20～31</td>
+      <td>Intel保留</td>
+    </tr>
+    <tr>
+      <td>32～127</td>
+      <td>外部中断IRQ</td>
+    </tr>
+    <tr>
+      <td>128</td>
+      <td>Linux用于系统调用的可编程异常</td>
+    </tr>
+    <tr>
+      <td>129～238</td>
+      <td>外部中断IRQ</td>
+    </tr>
+    <tr>
+      <td>239</td>
+      <td>本地APIC时钟中断</td>
+    </tr>
+    <tr>
+      <td>240</td>
+      <td>本地APIC高温中断</td>
+    </tr>
+    <tr>
+      <td>241～250</td>
+      <td>Linux保留</td>
+    </tr>
+    <tr>
+      <td>251～253</td>
+      <td>处理器间中断</td>
+    </tr>
+    <tr>
+      <td>254</td>
+      <td>本地APIC错误中断</td>
+    </tr>
+    <tr>
+      <td>255</td>
+      <td>本地APIC伪中断</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>其中本地APIC伪中断由CPU屏蔽某个中断时产生。</p>
+
+<p>为IRQ可配置设备选择一条线有三种方式：</p>
+
+<ol>
+  <li>设置一些硬件跳线，但只适用于旧式设备卡。</li>
+  <li>安装设备时执行一个使用程序，这样的程序可以让用户选择一个可用的IRQ号，或者探测系统自身以确定一个可用的IRQ号。</li>
+  <li>在系统启动时执行一个硬件协议，外设宣布它们准备使用哪些中断线，然后协商一个最终的值以尽可能的减少冲突。</li>
+</ol>
+
+<p>内核必须在启动中断前发现IRQ号与I/O设备之间的对应，否则，内核在不知道哪个向量对应哪个设备的情况下，无法处理来自这个设备的信号。IRQ号与I/O设备之间的对应是在初始化每个设备驱动程序时建立的。</p>
+
+<h3 id="irq">IRQ数据结构</h3>
+
+<p>每个中断向量都有自己的<em>irq_desc</em>描述符，代码如下：</p>
+
+<h4 id="includelinuxirqh">&lt;include/linux/irq.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">irq_desc</span> <span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">irq</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>            <span class="o">*</span><span class="n">kstat_irqs</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_INTR_REMAP
+</span>    <span class="k">struct</span> <span class="n">irq_2_iommu</span>      <span class="o">*</span><span class="n">irq_2_iommu</span><span class="p">;</span>
+<span class="cp">#endif
+</span>    <span class="n">irq_flow_handler_t</span>  <span class="n">handle_irq</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">irq_chip</span>     <span class="o">*</span><span class="n">chip</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">msi_desc</span>     <span class="o">*</span><span class="n">msi_desc</span><span class="p">;</span>
+    <span class="kt">void</span>            <span class="o">*</span><span class="n">handler_data</span><span class="p">;</span>
+    <span class="kt">void</span>            <span class="o">*</span><span class="n">chip_data</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">irqaction</span>    <span class="o">*</span><span class="n">action</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">status</span><span class="p">;</span>
+
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">depth</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">wake_depth</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">irq_count</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">last_unhandled</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">irqs_unhandled</span><span class="p">;</span>
+    <span class="n">spinlock_t</span>      <span class="n">lock</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_SMP
+</span>    <span class="n">cpumask_var_t</span>       <span class="n">affinity</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>        <span class="n">node</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_GENERIC_PENDING_IRQ
+</span>    <span class="n">cpumask_var_t</span>       <span class="n">pending_mask</span><span class="p">;</span>
+<span class="cp">#endif
+#endif
+</span>    <span class="n">atomic_t</span>        <span class="n">threads_active</span><span class="p">;</span>
+    <span class="n">wait_queue_head_t</span>       <span class="n">wait_for_threads</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_PROC_FS
+</span>    <span class="k">struct</span> <span class="n">proc_dir_entry</span>   <span class="o">*</span><span class="n">dir</span><span class="p">;</span>
+<span class="cp">#endif
+</span>    <span class="k">const</span> <span class="kt">char</span>      <span class="o">*</span><span class="n">name</span><span class="p">;</span>
+<span class="p">}</span> <span class="n">____cacheline_internodealigned_in_smp</span><span class="p">;</span></code></pre></div>
+
+<p>其中重要字段的意义如下：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>irq</td>
+      <td>IRQ线</td>
+    </tr>
+    <tr>
+      <td>time_rand_state</td>
+      <td>timer和state的指针</td>
+    </tr>
+    <tr>
+      <td>kstat_irqs</td>
+      <td>per-CPU irq状态</td>
+    </tr>
+    <tr>
+      <td>handle_irq</td>
+      <td>IRQ线上的事件处理，如果为空，则调用_do_IRQ()</td>
+    </tr>
+    <tr>
+      <td>msi_desc</td>
+      <td>MSI描述符</td>
+    </tr>
+    <tr>
+      <td>handler_data</td>
+      <td>IRQ线上的数据</td>
+    </tr>
+    <tr>
+      <td>action</td>
+      <td>IRQ线上的动作</td>
+    </tr>
+    <tr>
+      <td>status</td>
+      <td>状态信息</td>
+    </tr>
+    <tr>
+      <td>depth</td>
+      <td>如果IRQ线被激活，则显示为0，如果IRQ线被禁止了不止一次，则显示一个正数</td>
+    </tr>
+    <tr>
+      <td>wake_depth</td>
+      <td>嵌套IRQ调用</td>
+    </tr>
+    <tr>
+      <td>irq_count</td>
+      <td>IRQ线上发生的中断数</td>
+    </tr>
+    <tr>
+      <td>last_unhandled</td>
+      <td>最后一次没有处理的中断的时间</td>
+    </tr>
+    <tr>
+      <td>irqs_unhandled</td>
+      <td>意外中断的总次数</td>
+    </tr>
+    <tr>
+      <td>lock</td>
+      <td>SMP系统的锁</td>
+    </tr>
+    <tr>
+      <td>node</td>
+      <td>为了均衡使用的索引</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>如果一个中断内核没有处理，那么这个中断就是意外中断，也就是说，与某个IRQ线县官的中断处理例程ISR不存在，或者与某个中断线相关的所有例程都识别不出是否时自己硬件发出的中断。通常，内核检查从IRQ线接收以外中断的数量，当这条IRQ线连接的有故障的设备没完没了的发出中断，就禁用这条IRQ线。</p>
+
+<p>由于多个设备会共有一条IRQ线，所以内核不会在每次检测到一个意外中断就立即禁止IRQ线，内核把中断和意外中断的总次数分别放在<em>irq_desc</em>描述符的<em>irq_count</em>和<em>irqs_unhandled</em>字段中，当产生100000次中断时，意外中断超过99900，内核才禁用这条IRQ线。</p>
+
+<p>IRQ的状态标志如下：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>IRQ_INPROGRESS</td>
+      <td>IRQ的一个处理程序正在执行</td>
+    </tr>
+    <tr>
+      <td>IRQ_DISABLED</td>
+      <td>由一个设备驱动程序故意的禁用IRQ</td>
+    </tr>
+    <tr>
+      <td>IRQ_PENDING</td>
+      <td>一个IRQ已经出现在线上，它的出现页对PIC做出应答</td>
+    </tr>
+    <tr>
+      <td>IRQ_REPLAY</td>
+      <td>IRQ线被禁用，但是前一个出现的IRQ还没有对PIC做出应答</td>
+    </tr>
+    <tr>
+      <td>IRQ_AUTODETECT</td>
+      <td>内核在执行硬件设备探测时使用IRQ线</td>
+    </tr>
+    <tr>
+      <td>IRQ_WAITING</td>
+      <td>内核在执行硬件设备探测时使用IRQ线但相应的中断还没有产生</td>
+    </tr>
+    <tr>
+      <td>IRQ_LEVEL</td>
+      <td>80x86结构上未使用</td>
+    </tr>
+    <tr>
+      <td>IRQ_MASKED</td>
+      <td>未使用</td>
+    </tr>
+    <tr>
+      <td>IRQ_PER_CPU</td>
+      <td>80x86结构上未使用</td>
+    </tr>
+    <tr>
+      <td>IRQ_NOPROBE</td>
+      <td>IRQ线无法进行探测</td>
+    </tr>
+    <tr>
+      <td>IRQ_NOREQUEST</td>
+      <td>IRQ线无法被请求</td>
+    </tr>
+    <tr>
+      <td>IRQ_NOAUTOEN</td>
+      <td>IRQ线无法被激活以请求</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>多个设备共享一个单独的IRQ，所以内核要维护多个irqaction描述符，也就是上面的action，其中每个描述符涉及一个特定的硬件设备和特定的中断，irqaciton代码如下所示：</p>
+
+<h4 id="includelinuxinterrupth">&lt;include/linux/interrupt.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">irqaction</span> <span class="p">{</span>
+    <span class="n">irq_handler_t</span> <span class="n">handler</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">flags</span><span class="p">;</span>
+    <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">name</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">dev_id</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">irqaction</span> <span class="o">*</span><span class="n">next</span><span class="p">;</span>
+    <span class="kt">int</span> <span class="n">irq</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">proc_dir_entry</span> <span class="o">*</span><span class="n">dir</span><span class="p">;</span>
+    <span class="n">irq_handler_t</span> <span class="n">thread_fn</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="kr">thread</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">thread_flags</span><span class="p">;</span>
+<span class="p">};</span></code></pre></div>
+
+<p>其中重要字段的意义如下：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>handler</td>
+      <td>指向一个I/O设备的中断服务例程，这是允许多个设备共享同一个IRQ的关键字段</td>
+    </tr>
+    <tr>
+      <td>flags</td>
+      <td>描述IRQ与I/O设备之间的关系</td>
+    </tr>
+    <tr>
+      <td>mask</td>
+      <td>未使用</td>
+    </tr>
+    <tr>
+      <td>name</td>
+      <td>I/O设备名</td>
+    </tr>
+    <tr>
+      <td>dev_id</td>
+      <td>I/O设备私有字段</td>
+    </tr>
+    <tr>
+      <td>next</td>
+      <td>链表的下一个irqaction元素</td>
+    </tr>
+    <tr>
+      <td>irq</td>
+      <td>IRQ线</td>
+    </tr>
+    <tr>
+      <td>dir</td>
+      <td>指向与IRQn相关的/proc/irq/n目录的描述符</td>
+    </tr>
+  </tbody>
+</table>
+<div class="footnotes">
+  <ol>
+    <li id="fn:io">
+      <p>我们以后可以看到本地时钟产生的中断的IRQ代码里设定的是irq0。 <a href="#fnref:io" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>虽然现在有更先进的PIC，但Linux还是支持8259风格的PIC。 <a href="#fnref:2" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#PIC">#PIC</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#中断处理">#中断处理</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/working-on-interrupt/" class="pre">&lt; 中断处理</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/io-interrupt-dynamic/" class="next">动态分配IRQ线 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments interrupt中断和异常_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章I/O中断处理写于2014年05月07日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

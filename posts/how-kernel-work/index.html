@@ -1,0 +1,263 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>内核|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 内核的任务，以及内核的一些工作..." name="description"/>
+  <meta content="微内核,宏内核,模块,代码结构," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/how-kernel-work/" />
+  <meta property="og:title" content="内核" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 内核的任务，以及内核的一些工作..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">内核</div>
+
+  <div class="content basic基础_content_css">
+    <p>什么是内核，内核做什么的呢？内核有哪些需要了解的概念？</p>
+
+<h3 id="section">内核的任务</h3>
+
+<p>在纯技术层面上，内核是硬件与软件之间的一个中间层。其作用是将应用程序的请求传递给硬件，并充当底层驱动程序，对系统中的各种设备和组件进行寻址。尽管如此，仍然可以从其他一些有趣的视角对内核进行研究。</p>
+
+<ol>
+  <li>从应用程序的视角来看，内核可以被认为是一台<code>增强的计算机</code>，将计算机抽象到一个高的层次上。比如，在内核寻址硬盘时，它必须确定使用哪个路径来从磁盘向内存复制数据，数据的位置，从哪个路径向磁盘发送哪一条命令，等等。另一方面，应用程序只需发出传输数据的命令。实际的工作如何完成与应用程序是不相关的，因为内核抽象了相关的细节。应用程序与硬件喷神没有联系，只与内核有联系，内核是应用程序所知道的层次结构中的最底层。</li>
+  <li>当若干程序在同一系统中并发运行时，也可以将内核视为<code>资源管理程序</code>。在这种情况下，内核负责将可用共享资源（如CPU时间、磁盘空间、网络连接）分配到各个系统进程，同事还需要保证系统的完整性。</li>
+  <li>另一种研究内核的视角是将内核视为库，其提供了一组面相系统的命令。比如说，系统调用用于向计算机发送请求，借助于C标准库，系统调用对于应用程序就像是普通函数一样。</li>
+</ol>
+
+<h3 id="section-1">实现策略</h3>
+
+<p>微内核</p>
+
+<p>只有最基本的功能直接由中央内核（微内核）实现。所有其他的功能都委托给一些独立进程，这些进程通过明确定义的通信接口与重心内核通信。比如说，独立进程可能负责实现各种文件系统，内存管理等等。理论上，这是一种很完美的实现方法，因为系统各个部分彼此都很清楚的划分开来，同时也能够让程序员使用干净的程序。这种方法的好处也包括：动态可扩展性和在运行时切换重要的组件。</p>
+
+<p>宏内核</p>
+
+<p>与微内核相反，宏内核是构建系统内核的传统方法。在这种方法中，内核的全部代码都打包到一个文件中。内核中的每个函数都可以访问内核中其他部分。如果编程不小心，可能导致代码中出现复杂的嵌套。目前Linux依旧是使用宏内核。</p>
+
+<p>不过其中有了一个重要革新，就是在系统运行中，模块可以插入到内核代码中，也可以移除，这使得可以向内核动态添加功能，弥补了宏内核的一些缺陷。</p>
+
+<h3 id="section-2">模块</h3>
+
+<p>为了达到微内核理论上很多的优点又不影响性能，Linux内核提供了模块（module）。模块是一个目标文件，其代码可以运行在运行时链接到内核或从内核解除链接。这种目标代码通常由一组函数组成，用来实现文件系统、驱动程序或其他内核上层功能。与微内核操作系统的外层不同，模块不是作为一个特殊的进程执行的。相反，与任何其他静态链接的内核函数一样，它代表当前进程在内核态下执行。</p>
+
+<p>模块的优点包括：</p>
+
+<ol>
+  <li>模块化方法：任何模块都可以运行时被链接或解除，开发模块变得容易。</li>
+  <li>平台无关性：即使依赖于某些特殊的硬件特点，但它也不依赖于固定的硬件平台。</li>
+  <li>节省内存使用：只有需要模块功能时，才把它链接到正在运行的内核中。</li>
+  <li>无性能损失：模块的目标代码一旦被链接倒内核，其作用与静态链接的内核的目标代码完全等价。</li>
+</ol>
+
+<h3 id="section-3">内核的代码结构</h3>
+
+<p>内核代码包含了操作系统的方方面面，了解代码结构有助于帮助我们深入的查找内核代码。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>文件夹</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>arch</td>
+      <td>所有与体系结构相关的代码，例如arm、x86、a_64等不同体系结构的核心文件。</td>
+    </tr>
+    <tr>
+      <td>include</td>
+      <td>所有编译需要的核心头文件。</td>
+    </tr>
+    <tr>
+      <td>init</td>
+      <td>包含核心的初始化代码。</td>
+    </tr>
+    <tr>
+      <td>mm</td>
+      <td>包含内存管理的代码。</td>
+    </tr>
+    <tr>
+      <td>kernel</td>
+      <td>内核的主要代码。</td>
+    </tr>
+    <tr>
+      <td>drivers</td>
+      <td>驱动的主要代码。</td>
+    </tr>
+    <tr>
+      <td>fs</td>
+      <td>文件系统的各种操作代码。</td>
+    </tr>
+  </tbody>
+</table>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#微内核">#微内核</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#宏内核">#宏内核</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#模块">#模块</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#代码结构">#代码结构</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/heap/" class="pre">&lt; 堆</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/parts-of-kernel/" class="next">内核的体系结构 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments basic基础_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章内核写于2014年03月13日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

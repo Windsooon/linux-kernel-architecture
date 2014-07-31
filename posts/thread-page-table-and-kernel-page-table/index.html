@@ -1,0 +1,227 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>进程页表页和内核页表|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 进程页表和页内核页表..." name="description"/>
+  <meta content="页表,进程页表,内核页表,实模式,保护模式," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/thread-page-table-and-kernel-page-table/" />
+  <meta property="og:title" content="进程页表页和内核页表" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 进程页表和页内核页表..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">进程页表页和内核页表</div>
+
+  <div class="content mm内存寻址_content_css">
+    <p>页表的概念中，还有几个页表结构需要了解，分别为进程页表和内核页表：</p>
+
+<h3 id="section">进程页表</h3>
+
+<p>进程的线性地址空间分为两个部分：</p>
+
+<ol>
+  <li>从0x00000000到0xbfffffff的线性地址，无论进程运行在用户态还是内核态，都可以寻址。</li>
+  <li>从0xc0000000到0xfffffff的线性地址，只有内核态的进程才能访问。</li>
+</ol>
+
+<p>当进程运行在用户态时，它产生的线性地址小于0xc0000000，当进程运行在内核态时，它执行的是内核代码，所产生的地址大于等于0xc0000000，但是，在某些情况下，内核为了检索或存放数据必须访问用户态线性地址空间。</p>
+
+<p>宏PAGE_OFFSET的值是0xc0000000。这就是线性地址空间中的偏移量，页是内核生存空间的开始之处。页全局目录的第一部分表项映射的线性地址小于0xc0000000，具体大小依赖于特定的进程。相反，剩余的表项对所有的进程来说都应该是相同的，它们等于主内核页全局目录的相应表项。</p>
+
+<h3 id="section-1">内核页表</h3>
+
+<p>内核维持着一组自己使用的页表，驻留在所谓的主内核页全局目录（<em>master kernel Page Global Directory</em>）中，系统初始化后，这组表还未被任何进程或任何内核线程直接使用，更准确的说，主内核页全局目录的最高目录项部分作为参考模型，为系统中每一个普通进程对应的页全局目录项提供参考模型。</p>
+
+<p>内核初始化自己的页表需要两个阶段，内核映象刚刚被装入内存后，CPU仍然运行于实模式，所以分页功能没有被启用。</p>
+
+<p>x86体系的处理器刚开始时只有20根地址线，寻址寄存器是16位。所以实模式是指寻址采用和8086相同的16位段和偏移量，最大寻址空间1MB<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>，最大分段64KB。可以使用32位指令。事实上，实模式将整个物理内存看成分段的区域，程序代码和数据位于不同区域，系统程序和用户程序并没有区别对待，而且每一个指针都是指向实际的物理地址。这虽然灵活但一方面给程序最大的权利，另一方面也带来了维护的困难，因为内存地址没有收到保护，所以可能因为内存被复写，导致系统崩溃。</p>
+
+<p>为了克服这种问题，保护进程地址空间，处理器厂商开发出保护模式<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>。在保护模式中，寻址能力大大提高，而且因为内存不能直接被程序访问，需要通过逻辑地址到物理地址的转换去访问，所以物理地址对程序透明，每个进程都无法访问其他进程的地址，甚至也无法访问自己的虚地址。如果有访问，则会产生段错误。</p>
+
+<p>Linux只有在刚刚启动时是实模式，然后就进入保护模式。</p>
+
+<p>在第一个阶段，内核创建一个有限的地址空间，包括内核的代码段和数据段，初始页表和用于存放动态数据结构的一共128KB大小的空间。这个最小限度的地址空间仅能够将内核装入RAM并对其初始化核心数据结构。</p>
+
+<p>第二个阶段，内核重复的利用剩余的RAM并适当地建立分页表。</p>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>16位的寄存器可以访问64K的地址空间，如果程序要想访问大于64K的内存，就需要把内存分段，每段64K，用段地址+偏移量的方式来访问，这样使20根地址线全用上，最大的寻址空间就可以到1M字节。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>除了实模式和保护模式，还有虚拟8086模式。虚拟8086模式是运行在保护模式中的实模式，为了在32位保护模式下执行纯16位程序。它不是一个真正的CPU模式，还属于保护模式。 <a href="#fnref:2" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#页表">#页表</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#进程页表">#进程页表</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#内核页表">#内核页表</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#实模式">#实模式</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#保护模式">#保护模式</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/physical-memory/" class="pre">&lt; 物理内存布局</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/pglist-data-and-zone/" class="next">内存管理区 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm内存寻址_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章进程页表页和内核页表写于2014年04月17日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

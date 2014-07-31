@@ -1,0 +1,546 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>超级块对象|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 VFS数据结构之一..." name="description"/>
+  <meta content="超级块," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/super-block-object/" />
+  <meta property="og:title" content="超级块对象" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 VFS数据结构之一..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">超级块对象</div>
+
+  <div class="content virtual_filesystem虚拟文件系统_content_css">
+    <p>每个VFS对象都存放在一个适当的数据结构中，其中包括对象的属性和指向对象的方法的指针，内核可以动态地修改对象的方法，因此可以为对象建立专用的行为。</p>
+
+<p>内核中有多重对象，超级块对象是一种常用的对象。超级块对象由<em>super_block</em>结构组成。代码如下：</p>
+
+<h4 id="includelinuxfsh">&lt;include/linux/fs.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">super_block</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">s_list</span><span class="p">;</span>
+    <span class="n">dev_t</span>               <span class="n">s_dev</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">s_blocksize</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span>       <span class="n">s_blocksize_bits</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span>       <span class="n">s_dirt</span><span class="p">;</span>
+    <span class="n">loff_t</span>              <span class="n">s_maxbytes</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">file_system_type</span>         <span class="o">*</span><span class="n">s_type</span><span class="p">;</span>
+    <span class="k">const</span> <span class="k">struct</span> <span class="n">super_operations</span>   <span class="o">*</span><span class="n">s_op</span><span class="p">;</span>
+    <span class="k">const</span> <span class="k">struct</span> <span class="n">dquot_operations</span>   <span class="o">*</span><span class="n">dq_op</span><span class="p">;</span>
+    <span class="k">const</span> <span class="k">struct</span> <span class="n">quotactl_ops</span>       <span class="o">*</span><span class="n">s_qcop</span><span class="p">;</span>
+    <span class="k">const</span> <span class="k">struct</span> <span class="n">export_operations</span>  <span class="o">*</span><span class="n">s_export_op</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">s_flags</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span>       <span class="n">s_magic</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">dentry</span>       <span class="o">*</span><span class="n">s_root</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">rw_semaphore</span> <span class="n">s_umount</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">mutex</span>        <span class="n">s_lock</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="n">s_count</span><span class="p">;</span>
+    <span class="kt">int</span>         <span class="n">s_need_sync</span><span class="p">;</span>
+    <span class="n">atomic_t</span>        <span class="n">s_active</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_SECURITY
+</span>    <span class="kt">void</span>                <span class="o">*</span><span class="n">s_security</span><span class="p">;</span>
+<span class="cp">#endif
+</span>    <span class="k">struct</span> <span class="n">xattr_handler</span>  <span class="o">**</span><span class="n">s_xattr</span><span class="p">;</span>
+
+    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">s_inodes</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">hlist_head</span>   <span class="n">s_anon</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">s_files</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">s_dentry_lru</span><span class="p">;</span>
+    <span class="kt">int</span>                 <span class="n">s_nr_dentry_unused</span><span class="p">;</span> 
+
+    <span class="k">struct</span> <span class="n">block_device</span> <span class="o">*</span><span class="n">s_bdev</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">backing_dev_info</span> <span class="o">*</span><span class="n">s_bdi</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">mtd_info</span>     <span class="o">*</span><span class="n">s_mtd</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">s_instances</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">quota_info</span>   <span class="n">s_dquot</span><span class="p">;</span>
+
+    <span class="kt">int</span>                 <span class="n">s_frozen</span><span class="p">;</span>
+    <span class="n">wait_queue_head_t</span>   <span class="n">s_wait_unfrozen</span><span class="p">;</span>
+
+    <span class="kt">char</span> <span class="n">s_id</span><span class="p">[</span><span class="mi">32</span><span class="p">];</span>
+
+    <span class="kt">void</span>                <span class="o">*</span><span class="n">s_fs_info</span><span class="p">;</span>
+    <span class="n">fmode_t</span>             <span class="n">s_mode</span><span class="p">;</span>
+
+    <span class="k">struct</span> <span class="n">mutex</span> <span class="n">s_vfs_rename_mutex</span><span class="p">;</span>
+
+    <span class="n">u32</span>    <span class="n">s_time_gran</span><span class="p">;</span>
+
+    <span class="kt">char</span> <span class="o">*</span><span class="n">s_subtype</span><span class="p">;</span>
+    <span class="kt">char</span> <span class="o">*</span><span class="n">s_options</span><span class="p">;</span>
+<span class="p">};</span></code></pre></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>s_list</td>
+      <td>指向超级块链表的指针</td>
+    </tr>
+    <tr>
+      <td>s_dev</td>
+      <td>设备标识符</td>
+    </tr>
+    <tr>
+      <td>s_blocksize</td>
+      <td>以字节为单位的块大小</td>
+    </tr>
+    <tr>
+      <td>s_old_blocksize</td>
+      <td>基本块设备驱动程序中提到的以字节为单位的块大小</td>
+    </tr>
+    <tr>
+      <td>s_blocksize_bits</td>
+      <td>以位为单位的块大小</td>
+    </tr>
+    <tr>
+      <td>s_dirt</td>
+      <td>修改（脏）标志</td>
+    </tr>
+    <tr>
+      <td>s_maxbytes</td>
+      <td>文件的最长长度</td>
+    </tr>
+    <tr>
+      <td>s_type</td>
+      <td>文件系统类型</td>
+    </tr>
+    <tr>
+      <td>s_op</td>
+      <td>超级块方法</td>
+    </tr>
+    <tr>
+      <td>dp_op</td>
+      <td>磁盘限额处理方法</td>
+    </tr>
+    <tr>
+      <td>s_qcop</td>
+      <td>磁盘限额管理方法</td>
+    </tr>
+    <tr>
+      <td>s_export_op</td>
+      <td>网络文件系统使用的输出操作</td>
+    </tr>
+    <tr>
+      <td>s_flags</td>
+      <td>安装标志</td>
+    </tr>
+    <tr>
+      <td>s_magic</td>
+      <td>文件系统的magic words</td>
+    </tr>
+    <tr>
+      <td>s_root</td>
+      <td>文件系统根目录的目录项对象</td>
+    </tr>
+    <tr>
+      <td>s_unmount</td>
+      <td>卸载所用的信号量</td>
+    </tr>
+    <tr>
+      <td>s_lock</td>
+      <td>超级块信号量</td>
+    </tr>
+    <tr>
+      <td>s_count</td>
+      <td>引用计数器</td>
+    </tr>
+    <tr>
+      <td>s_syncing</td>
+      <td>表示对超级块的索引节点进行同步的标志</td>
+    </tr>
+    <tr>
+      <td>s_need_sync_fs</td>
+      <td>对超级块的已安装文件系统进行同步的标志</td>
+    </tr>
+    <tr>
+      <td>s_active</td>
+      <td>次级引用计数器</td>
+    </tr>
+    <tr>
+      <td>s_security</td>
+      <td>指向超级块安全数据结构的指针</td>
+    </tr>
+    <tr>
+      <td>s_xattr</td>
+      <td>指向超级块扩展属性结构的指针</td>
+    </tr>
+    <tr>
+      <td>s_inodes</td>
+      <td>所有索引节点的链表</td>
+    </tr>
+    <tr>
+      <td>s_dirty</td>
+      <td>改进型索引节点的链表</td>
+    </tr>
+    <tr>
+      <td>s_io</td>
+      <td>等待被写入磁盘的索引节点的链表</td>
+    </tr>
+    <tr>
+      <td>s_anon</td>
+      <td>用于处理远程网络文件系统的你们目录项的链表</td>
+    </tr>
+    <tr>
+      <td>s_files</td>
+      <td>文件对象的链表</td>
+    </tr>
+    <tr>
+      <td>s_bdev</td>
+      <td>指向块设备驱动程序描述符的指针</td>
+    </tr>
+    <tr>
+      <td>s_instances</td>
+      <td>用于给定文件系统类型的超级块对象链表的指针</td>
+    </tr>
+    <tr>
+      <td>s_dquot</td>
+      <td>磁盘限额的描述符</td>
+    </tr>
+    <tr>
+      <td>s_frozen</td>
+      <td>冻结文件系统时使用的标志</td>
+    </tr>
+    <tr>
+      <td>s_wait_unforzen</td>
+      <td>进程挂起的等待队列，直到文件系统被解冻</td>
+    </tr>
+    <tr>
+      <td>s_id</td>
+      <td>包含超级块的块设备名称</td>
+    </tr>
+    <tr>
+      <td>s_fs_info</td>
+      <td>指向特定文件系统的超级块信息的指针</td>
+    </tr>
+    <tr>
+      <td>s_vfs_rename_sem</td>
+      <td>当VFS通过目录重命名文件时使用的信号量</td>
+    </tr>
+    <tr>
+      <td>s_time_gran</td>
+      <td>纳秒级的时间戳的粒度</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>所有超级块对象都以双向链表的形式链接在一起，链表中的第一个元素用<em>super_blocks</em>变量来表示，而超级块多想的<em>s_list</em>字段存放指向链表相邻元素的指针，<em>sb_lock</em>自旋锁保护链表受多处理器系统上的同时访问。</p>
+
+<p><em>s_fs_info</em>字段指向属于具体文件系统的超级块信息，例如，加入超级块对象指向的时Ext文件系统，该字段就指向<em>extx_sb_info</em>数据结构，该结构包括磁盘分配位掩码和其他与VFS的通用文件模型无关的数据。</p>
+
+<p>通常，为了效率期间，由<em>s_fs_info</em>字段所指向的数据结构被复制到内存。任何基于磁盘文件系统都需要访问和更改自己的磁盘分配位图，以便分配或释放磁盘块，VFS允许这些文件系统直接对内存超级块<em>s_fs_info</em>字段进行操作，而无需访问磁盘。</p>
+
+<p>但是这种方法会带来一个新问题，有可能VFS超级块最终不再与磁盘上相应的超级块同步。因此，有必要引入一个<em>s_dirty</em>标志来表示该超级块是否时脏的—由此可以推断磁盘上的数据是否有必要更新。缺乏同步还会导致产生一个问题，就是当一台机器的电源突然断开而用户来不及正常关闭系统时，就会出现文件系统崩溃，Linux时他哦难过周期性地将所有『脏』超级块写回磁盘来减少该问题带来的危害。</p>
+
+<p>与超级块关联的方法就是超级块操作，当VFS需要调用其中一个操作时，比如说<em>read_inode()</em>，它就会执行下列操作：</p>
+
+<pre><code>sb-&gt;s_op-&gt;read_incode(inode);
+</code></pre>
+
+<p>这里<em>sb</em>存放所涉及超级块对象的地址。<em>super_operations</em>表的<em>read_inode</em>
+字段存放这这个函数的地址，所以可以看作这个函数直接被调用。我们可以通过了解<em>super_operations()</em>函数来了解一下超级块的操作。</p>
+
+<p>代码如下：</p>
+
+<h4 id="includelinuxfsh-1">&lt;include/linux/fs.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">super_operations</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">alloc_inode</span><span class="p">)(</span><span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="n">sb</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">destroy_inode</span><span class="p">)(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">dirty_inode</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">write_inode</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">drop_inode</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">delete_inode</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">put_super</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">write_super</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">sync_fs</span><span class="p">)(</span><span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="n">sb</span><span class="p">,</span> <span class="kt">int</span> <span class="n">wait</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">freeze_fs</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">unfreeze_fs</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">statfs</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">kstatfs</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">remount_fs</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span> <span class="o">*</span><span class="p">,</span> <span class="kt">char</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">clear_inode</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">umount_begin</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">show_options</span><span class="p">)(</span><span class="k">struct</span> <span class="n">seq_file</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">vfsmount</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">show_stats</span><span class="p">)(</span><span class="k">struct</span> <span class="n">seq_file</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">vfsmount</span> <span class="o">*</span><span class="p">);</span>
+<span class="cp">#ifdef CONFIG_QUOTA
+</span>    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">quota_read</span><span class="p">)(</span>
+        <span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">,</span> <span class="kt">char</span> <span class="o">*</span><span class="p">,</span> <span class="kt">size_t</span><span class="p">,</span> <span class="n">loff_t</span><span class="p">);</span>
+    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">quota_write</span><span class="p">)(</span>
+        <span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">,</span>
+        <span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="p">,</span> <span class="kt">size_t</span><span class="p">,</span> <span class="n">loff_t</span><span class="p">);</span>
+<span class="cp">#endif
+</span>    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">bdev_try_to_free_page</span><span class="p">)(</span>
+        <span class="k">struct</span> <span class="n">super_block</span><span class="o">*</span><span class="p">,</span>
+        <span class="k">struct</span> <span class="n">page</span><span class="o">*</span><span class="p">,</span>
+        <span class="n">gfp_t</span><span class="p">);</span>
+<span class="p">};</span></code></pre></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>函数名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>alloc_inocde(sb)</td>
+      <td>为索引节点对象分配空间，包括具体文件系统的数据所需的空间</td>
+    </tr>
+    <tr>
+      <td>destory_inode(inodes)</td>
+      <td>撤销索引节点对象，包括具体文件系统的数据</td>
+    </tr>
+    <tr>
+      <td>read_inode(inode)</td>
+      <td>用磁盘上的数据填充以参数传递过来的索引节点对象的字段，索引节点对象的<em>i_ino</em>字段标识从磁盘上要读取的具体文件系统的索引节点</td>
+    </tr>
+    <tr>
+      <td>dirty_inode(inode)</td>
+      <td>当索引节点标记为修改时调用</td>
+    </tr>
+    <tr>
+      <td>write_inode(inode, flag)</td>
+      <td>用通过传递参数指定的索引节点对象的内容更新一个文件系统的索引节点，索引节点对象的<em>i_ino</em>字段标识所涉及磁盘上文件系统的索引节点。<em>flag</em>参数表示I/O操作是否应当同步</td>
+    </tr>
+    <tr>
+      <td>put_inode(inode)</td>
+      <td>释放索引节点时调用以执行具体文件系统操作</td>
+    </tr>
+    <tr>
+      <td>drop_inode(inode)</td>
+      <td>在即将撤销索引节点时调用，也就是说，当最后一个用户释放该索引节点时，实现该方法的文件系统使用<em>generic_drop_inode()</em>函数。该函数从VFS数据结构中移走对索引节点的每一个引用，如果索引节点不再出现在任何目录中，则调用超级块方法<em>delete_inode</em>将它从文件系统中删除</td>
+    </tr>
+    <tr>
+      <td>delete_inode(inode)</td>
+      <td>在必须撤销索引节点时调用，删除内存中的VFS索引节点和磁盘上的文件数据及元数据</td>
+    </tr>
+    <tr>
+      <td>put_super(super)</td>
+      <td>释放通过传递的参数知道的超级块对象</td>
+    </tr>
+    <tr>
+      <td>write_super(super)</td>
+      <td>用指定对象的内容更新文件系统的超级块</td>
+    </tr>
+    <tr>
+      <td>sync_fs(sb, wait)</td>
+      <td>在清除文件系统来更新磁盘上的具体文件系统数据结构时调用</td>
+    </tr>
+    <tr>
+      <td>write_super_lockfs(super)</td>
+      <td>阻塞对文件系统的修改并用指定对象的内容更新超级块。当文件系统被冻结时调用该方法</td>
+    </tr>
+    <tr>
+      <td>unlockfs(super)</td>
+      <td>取消由<em>write_super_lockfs()</em>超级块方法实现的对文件系统更新的阻塞</td>
+    </tr>
+    <tr>
+      <td>statfs(super, buf)</td>
+      <td>将文件系统的统计信息返回并填写在<em>buf</em>缓冲中</td>
+    </tr>
+    <tr>
+      <td>remount_fs(super, flags, data)</td>
+      <td>用新的选项重新安装文件系统</td>
+    </tr>
+    <tr>
+      <td>clear_inode(inode)</td>
+      <td>当撤销磁盘索引节点执行具体文件系统操作时调用</td>
+    </tr>
+    <tr>
+      <td>umount_begin(super)</td>
+      <td>中断一个安装操作，因为相应的卸载操作已经开始，此操作只在网络文件系统中使用</td>
+    </tr>
+    <tr>
+      <td>show_options(seq_file, vfsmount)</td>
+      <td>用来显式特定文件系统的选项</td>
+    </tr>
+    <tr>
+      <td>quota_read(super, type, data, size, offset)</td>
+      <td>限额系统使用该方法从文件中读取数据，该文件详细说明了所在文件系统的限制</td>
+    </tr>
+    <tr>
+      <td>quota_write(super, type, data, size, offset)</td>
+      <td>限额系统使用该方法将数据写入文件中，该文件详细说明了所在文件系统的限制<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>上表的方法对所有可能的文件系统类型均是可用的，但是只有其中的一个自己应用到每个具体的文件系统，未实现的方法对应的字段设置为NULL。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>限额系统（<em>quota system</em>）为每个用户和（或）组限制了它们在给定文件系统上所能使用的空间大小。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#超级块">#超级块</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab-alloc/" class="pre">&lt; slab分配</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/inode-object/" class="next">索引节点对象 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments virtual_filesystem虚拟文件系统_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章超级块对象写于2014年05月13日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,432 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>等待队列|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 等待队列" name="description"/>
+  <meta content="等待队列," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/wait-queue/" />
+  <meta property="og:title" content="等待队列" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 等待队列" />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">等待队列</div>
+
+  <div class="content process进程_content_css">
+    <p>等待队列（<em>wait queue</em>）用于使进程等待某一特定的事件发生而无需频繁的轮询，进程在等待期间睡眠，在某件事发生时由内核自动唤醒。</p>
+
+<h3 id="section">数据结构</h3>
+
+<p>每个等待队列都有一个队列的头，我们可以看看等待队列的代码：</p>
+
+<h4 id="linuxwaith">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">__wait_queue_head</span> <span class="p">{</span>
+    <span class="n">spinlock_t</span> <span class="n">lock</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">task_list</span><span class="p">;</span>
+<span class="p">};</span>
+<span class="k">typedef</span> <span class="k">struct</span> <span class="n">__wait_queue_head</span> <span class="n">wait_queue_head_t</span><span class="p">;</span></code></pre></div>
+
+<p>因为等待队列也可以在中断的时候修改，在操作队列之前必须获得一个自旋锁，<em>task_list</em>是一个双链表，用于实现双联表最擅长表示的结构，就是队列：</p>
+
+<h4 id="linuxwaith-1">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">__wait_queue</span> <span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">flags</span><span class="p">;</span>
+<span class="cp">#define WQ_FLAG_EXCLUSIVE   0x01
+</span>    <span class="kt">void</span> <span class="o">*</span><span class="k">private</span><span class="p">;</span>
+    <span class="n">wait_queue_func_t</span> <span class="n">func</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">task_list</span><span class="p">;</span>
+<span class="p">};</span></code></pre></div>
+
+<p>我们可以看到链表<em>__wait_queue</em>中的各个字段，其字段意义如下：</p>
+
+<table class="table_center">
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>flags</td>
+      <td>为WQ_FLAG_EXCUSIVE或为0，WQ_FLAG_EXCUSIVE表示等待进程想要被独占地唤醒</td>
+    </tr>
+    <tr>
+      <td>private</td>
+      <td>是一个指针，指向等待进程的task_struct实例，这个变量本质上可以指向任意的私有数据</td>
+    </tr>
+    <tr>
+      <td>func</td>
+      <td>等待唤醒进程</td>
+    </tr>
+    <tr>
+      <td>task_list</td>
+      <td>用作一个链表元素，用于将wait_queue_t实例防止到等待队列中</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>为了使当前进程在一个等待队列中睡眠，需要调用<em>wait_event</em>函数。进程进入睡眠，将控制权释放给调度器。内核通常会在向块设备发出传输数据的请求后调用这个函数，因为传输不会立即发送，而在此期间又没有其他事情可做，所以进程就可以进入睡眠，将CPU时间交给系统中的其他进程。</p>
+
+<p>在内核中的另一处，例如，来自块设备的数据到达后，必须调用<em>wake_up</em>函数来唤醒等待队列中的睡眠进程。在使用<em>wait_event</em>让进程睡眠后，必须确保在内核的另一块一定有一个对应的<em>wake_up</em>调用，这是必须的，否则睡眠的进程永远无法醒来。</p>
+
+<h3 id="section-1">进程睡眠</h3>
+
+<p><em>add_wait_queue</em>函数用于将一个进程增加到等待队列，这个函数必须要获得自旋锁，在获得自旋锁之后，将工作委托给<em>__add_wait_queue</em>。</p>
+
+<h4 id="linuxwaith-2">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="kt">void</span> <span class="nf">__add_wait_queue</span><span class="p">(</span>
+    <span class="n">wait_queue_head_t</span> <span class="o">*</span><span class="n">head</span><span class="p">,</span>
+    <span class="n">wait_queue_t</span> <span class="o">*</span><span class="k">new</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">list_add</span><span class="p">(</span><span class="o">&amp;</span><span class="k">new</span><span class="o">-&gt;</span><span class="n">task_list</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">head</span><span class="o">-&gt;</span><span class="n">task_list</span><span class="p">);</span>
+<span class="p">}</span></code></pre></div>
+
+<p>在将新进程统计到等待队列的时候，除了使用<em>list_add</em>函数并没有其他的工作要做，内核还提供了<em>add_wait_queue_exclusive</em>函数，它的工作方式和这个函数相同，但是将进程插入到链表的尾部，并将其设置为<em>WQ_EXCLUSIVE</em>标志。</p>
+
+<p>让进程在等待队列上进入睡眠的另一种方法是<em>prepare_to_wait</em>，在这个函数中还需要进程的状态，代码如下：</p>
+
+<h4 id="kernelwaitc">&lt;kernel/wait.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="kt">void</span>
+<span class="nf">prepare_to_wait</span><span class="p">(</span><span class="n">wait_queue_head_t</span> <span class="o">*</span><span class="n">q</span><span class="p">,</span> <span class="n">wait_queue_t</span> <span class="o">*</span><span class="n">wait</span><span class="p">,</span> <span class="kt">int</span> <span class="n">state</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">flags</span><span class="p">;</span>
+    <span class="cm">/* 将进程添加到等待队列的尾部
+     * 这种实现确保在混合访问类型的队列中
+     * 首先唤醒所有的普通进程
+     * 然后才考虑到对内核堆栈进程的限制
+     */</span>
+    <span class="n">wait</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;=</span> <span class="o">~</span><span class="n">WQ_FLAG_EXCLUSIVE</span><span class="p">;</span>
+    <span class="c1">// 创建一个自旋锁
+</span>    <span class="n">spin_lock_irqsave</span><span class="p">(</span><span class="o">&amp;</span><span class="n">q</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">,</span> <span class="n">flags</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">list_empty</span><span class="p">(</span><span class="o">&amp;</span><span class="n">wait</span><span class="o">-&gt;</span><span class="n">task_list</span><span class="p">))</span>
+        <span class="c1">// 添加到链表中
+</span>        <span class="n">__add_wait_queue</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">wait</span><span class="p">);</span>
+    <span class="n">set_current_state</span><span class="p">(</span><span class="n">state</span><span class="p">);</span>
+    <span class="c1">// 解锁一个自旋锁
+</span>    <span class="n">spin_unlock_irqrestore</span><span class="p">(</span><span class="o">&amp;</span><span class="n">q</span><span class="o">-&gt;</span><span class="n">lock</span><span class="p">,</span> <span class="n">flags</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="n">EXPORT_SYMBOL</span><span class="p">(</span><span class="n">prepare_to_wait</span><span class="p">);</span></code></pre></div>
+
+<p>除了将进程休眠添加到队列里中，内核提供了两个标准方法可用于初始化一个动态分配的<em>wait_queue_t</em>实例，分别为<em>init_waitqueue_entry</em>和宏<em>DEFINE_WAIT</em>。</p>
+
+<h4 id="linuxwaith-3">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="kt">void</span> <span class="nf">init_waitqueue_entry</span><span class="p">(</span>
+    <span class="n">wait_queue_t</span> <span class="o">*</span><span class="n">q</span><span class="p">,</span>
+    <span class="k">struct</span> <span class="n">task_struct</span> <span class="o">*</span><span class="n">p</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">q</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="n">q</span><span class="o">-&gt;</span><span class="k">private</span> <span class="o">=</span> <span class="n">p</span><span class="p">;</span>
+    <span class="n">q</span><span class="o">-&gt;</span><span class="n">func</span> <span class="o">=</span> <span class="n">default_wake_function</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p><em>default_wake_function</em>只是一个进行参数转换的前端，然后使用<em>try_to_wake_up</em>函数来唤醒进程。</p>
+
+<p>宏<em>DEFINE_WAIT</em>创建<em>wait_queue_t</em>的静态实例：</p>
+
+<h4 id="linuxwaith-4">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define DEFINE_WAIT_FUNC(name, function)
+</span>    <span class="n">wait_queue_t</span> <span class="n">name</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="p">.</span><span class="k">private</span>    <span class="o">=</span> <span class="n">current</span><span class="p">,</span>
+        <span class="p">.</span><span class="n">func</span>       <span class="o">=</span> <span class="n">function</span><span class="p">,</span>
+        <span class="p">.</span><span class="n">task_list</span>  <span class="o">=</span> <span class="n">LIST_HEAD_INIT</span><span class="p">((</span><span class="n">name</span><span class="p">).</span><span class="n">task_list</span><span class="p">),</span>
+    <span class="p">}</span>
+
+<span class="cp">#define DEFINE_WAIT(name) \
+    DEFINE_WAIT_FUNC(name, autoremove_wake_function)</span></code></pre></div>
+
+<p>这里用<em>autoremove_wake_function</em>来唤醒进程，这个函数不仅调用<em>default_waike_function</em>将所述等待队列从等待队列删除。<em>add_wait_queue</em>通常不直接使用，我们更经常使用<em>wait_event</em>，这是一个宏，代码如下：</p>
+
+<h4 id="linuxwaith-5">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define wait_event(wq, condition)
+</span><span class="k">do</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">condition</span><span class="p">)</span>
+        <span class="k">break</span><span class="p">;</span>
+    <span class="n">__wait_event</span><span class="p">(</span><span class="n">wq</span><span class="p">,</span> <span class="n">condition</span><span class="p">);</span>
+<span class="p">}</span> <span class="k">while</span> <span class="p">(</span><span class="mi">0</span><span class="p">)</span></code></pre></div>
+
+<p>这个宏等待一个条件，会确认这个条件是否满足，如果条件已经满足，就可以立即停止处理，因为没有什么可以继续等待的了，然后将工作交给<em>__wait_event</em>。</p>
+
+<h4 id="linuxwaith-6">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define __wait_event(wq, condition)
+</span><span class="k">do</span> <span class="p">{</span>
+    <span class="n">DEFINE_WAIT</span><span class="p">(</span><span class="n">__wait</span><span class="p">);</span>
+    <span class="k">for</span> <span class="p">(;;)</span> <span class="p">{</span>
+        <span class="n">prepare_to_wait</span><span class="p">(</span><span class="o">&amp;</span><span class="n">wq</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">__wait</span><span class="p">,</span> <span class="n">TASK_UNINTERRUPTIBLE</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">condition</span><span class="p">)</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="n">schedule</span><span class="p">();</span>
+    <span class="p">}</span>
+    <span class="n">finish_wait</span><span class="p">(</span><span class="o">&amp;</span><span class="n">wq</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">__wait</span><span class="p">);</span>
+<span class="p">}</span> <span class="k">while</span> <span class="p">(</span><span class="mi">0</span><span class="p">)</span></code></pre></div>
+
+<p>使用<em>DEFINE_WAIT</em>建立等待队列的成员之后，这个宏产生一个无限循环。使用<em>prepare_to_wait</em>使进程在等待队列上睡眠。每次进程被唤醒时，内核都会检查指定的条件是否满足，如果条件满足，就退出无线循环，否则将控制权交给调度器，进程再次睡眠。</p>
+
+<p>在条件满足时，<em>finish_wait</em>将进程状态设置回<em>TASK_RUNNING</em>，并从等待队列的链表移除对应项。</p>
+
+<p>除了<em>wait_event</em>之外，内核还定义了其他几个函数，可以将当前进程置于等待队列中，实现等同于<em>sleep_on</em>。</p>
+
+<h4 id="linuxwaith-7">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define wait_event_interruptible(
+</span>    <span class="n">wq</span><span class="p">,</span> <span class="n">condition</span><span class="p">)</span>
+<span class="p">({</span>
+    <span class="kt">int</span> <span class="n">__ret</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">condition</span><span class="p">))</span>
+        <span class="n">__wait_event_interruptible</span><span class="p">(</span>
+            <span class="n">wq</span><span class="p">,</span> <span class="n">condition</span><span class="p">,</span> <span class="n">__ret</span>
+        <span class="p">);</span>
+    <span class="n">__ret</span><span class="p">;</span>
+<span class="p">})</span></code></pre></div>
+
+<p><em>wait_event_interruptible</em>使用的进程状态为<em>TASK_INTERRUPTIBLE</em>，因而睡眠进程可以通过接收信号而唤醒。</p>
+
+<h4 id="linuxwaith-8">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define wait_event_interruptible_timeout(
+</span>    <span class="n">wq</span><span class="p">,</span> <span class="n">condition</span><span class="p">,</span> <span class="n">timeout</span><span class="p">)</span>
+<span class="p">({</span>
+    <span class="kt">long</span> <span class="n">__ret</span> <span class="o">=</span> <span class="n">timeout</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">condition</span><span class="p">))</span>
+        <span class="n">__wait_event_interruptible_timeout</span><span class="p">(</span>
+            <span class="n">wq</span><span class="p">,</span> <span class="n">condition</span><span class="p">,</span> <span class="n">__ret</span>
+        <span class="p">);</span>
+    <span class="n">__ret</span><span class="p">;</span>
+<span class="p">})</span></code></pre></div>
+
+<p><em>wait_event_interruptible_timeout</em>让进程睡眠，但可以通过接受信号唤醒，它注册了一个超时限制。</p>
+
+<h4 id="linuxwaith-9">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define wait_event_timeout(wq, condition, timeout)
+</span><span class="p">({</span>
+    <span class="kt">long</span> <span class="n">__ret</span> <span class="o">=</span> <span class="n">timeout</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="p">(</span><span class="n">condition</span><span class="p">))</span>
+        <span class="n">__wait_event_timeout</span><span class="p">(</span>
+            <span class="n">wq</span><span class="p">,</span> <span class="n">condition</span><span class="p">,</span> <span class="n">__ret</span>
+        <span class="p">);</span>
+    <span class="n">__ret</span><span class="p">;</span>
+<span class="p">})</span></code></pre></div>
+
+<p><em>wait_event_timeout</em>等待满足指定的条件，但如果等待时间超过了指定的超时限制，那么就停止，这防止了永远睡眠的情况。</p>
+
+<h3 id="section-2">唤醒进程</h3>
+
+<p>唤醒进程的过程比较简单，内核定义了一些列的宏用户唤醒进程。</p>
+
+<h4 id="linuxwaith-10">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="cp">#define wake_up_poll(x, m)
+</span>    <span class="n">__wake_up</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">TASK_NORMAL</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span> <span class="p">(</span><span class="n">m</span><span class="p">))</span>
+
+<span class="cp">#define wake_up_locked_poll(x, m)
+</span>    <span class="n">__wake_up_locked_key</span><span class="p">((</span><span class="n">x</span><span class="p">),</span> <span class="n">TASK_NORMAL</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span> <span class="p">(</span><span class="n">m</span><span class="p">))</span>
+
+<span class="cp">#define wake_up_interruptible_poll(x, m)
+</span>    <span class="n">__wake_up</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">TASK_INTERRUPTIBLE</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span> <span class="p">(</span><span class="n">m</span><span class="p">))</span>
+
+<span class="cp">#define wake_up_interruptible_sync_poll(x, m)
+</span>    <span class="n">__wake_up_sync_key</span><span class="p">((</span><span class="n">x</span><span class="p">),</span> <span class="n">TASK_INTERRUPTIBLE</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span><span class="kt">void</span> <span class="o">*</span><span class="p">)</span> <span class="p">(</span><span class="n">m</span><span class="p">))</span></code></pre></div>
+
+<p>在获得了用户保护等待队列首部的锁之后，<em>_wake_up</em>将工作委托给<em>_wake_up_common</em>，代码如下：</p>
+
+<h4 id="linuxwaith-11">&lt;linux/wait.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kt">void</span> <span class="nf">__wake_up_common</span><span class="p">(</span>
+    <span class="n">wait_queue_head_t</span> <span class="o">*</span><span class="n">q</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">mode</span><span class="p">,</span>
+    <span class="kt">int</span> <span class="n">nr_exclusive</span><span class="p">,</span> <span class="kt">int</span> <span class="n">wake_flags</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">key</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">wait_queue_t</span> <span class="o">*</span><span class="n">curr</span><span class="p">,</span> <span class="o">*</span><span class="n">next</span><span class="p">;</span>
+    <span class="c1">// 反复扫描链表，直到没有更多需要唤醒的进程
+</span>    <span class="n">list_for_each_entry_safe</span><span class="p">(</span><span class="n">curr</span><span class="p">,</span> <span class="n">next</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">q</span><span class="o">-&gt;</span><span class="n">task_list</span><span class="p">,</span> <span class="n">task_list</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kt">unsigned</span> <span class="n">flags</span> <span class="o">=</span> <span class="n">curr</span><span class="o">-&gt;</span><span class="n">flags</span><span class="p">;</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="n">curr</span><span class="o">-&gt;</span><span class="n">func</span><span class="p">(</span><span class="n">curr</span><span class="p">,</span> <span class="n">mode</span><span class="p">,</span> <span class="n">wake_flags</span><span class="p">,</span> <span class="n">key</span><span class="p">)</span> <span class="o">&amp;&amp;</span>
+                <span class="p">(</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">WQ_FLAG_EXCLUSIVE</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="o">!--</span><span class="n">nr_exclusive</span><span class="p">)</span>
+                <span class="cm">/* 检查唤醒进程的数目是否达到了nr_exclusive
+                 * 避免所谓的惊群问题
+                 * 如果几个进程在等待独占访问某一资源
+                 * 那么同时唤醒所有的等进程时没有意义的
+                 * 因为除了其中的一个进程之外
+                 * 其他的进程都会再次进入睡眠
+                 */</span>
+            <span class="k">break</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span></code></pre></div>
+
+<p><em>q</em>用于选定等待队列，而<em>mode</em>指定进程的状态，用于控制唤醒进程的条件，<em>nr_exclusive</em>表示将要唤醒的设置了<em>WQ_FLAG_EXCLUSIVE</em>标志的进程的数目。从上面的注释可以看出<em>nr_exclusive</em>是非常有用的，这个数字表示检查唤醒进程的数目是否达到了nr_exclusive，从而避免所谓的惊群的问题。</p>
+
+<p>惊群问题是，当需要唤醒进程的时候，不需要将所有等待某一资源的进程全部唤醒，因为即便全部唤醒，也只能有一个进程需要唤醒，而其他的进程都要再次进入睡眠，这是非常浪费资源的，更不要说每次进程唤醒都会出现这样的问题。</p>
+
+<p>但并不是说所有的进程都不能同时被唤醒，如果进程在等待的数据传输结束，那么唤醒等待队列中的所有进程是可行的，因为这几个进程的数据可以同时读取而不会被干扰。</p>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#等待队列">#等待队列</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab-structure/" class="pre">&lt; slab数据结构</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/completion/" class="next">完成量 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments process进程_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章等待队列写于2014年05月10日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

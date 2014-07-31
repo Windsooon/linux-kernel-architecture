@@ -1,0 +1,377 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>目录项对象|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 目录项对象..." name="description"/>
+  <meta content="目录项," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/dentry-object/" />
+  <meta property="og:title" content="目录项对象" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 目录项对象..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">目录项对象</div>
+
+  <div class="content virtual_filesystem虚拟文件系统_content_css">
+    <p>我们知道VFS把每个目录看作由若干子目录和文件组成的一个普通文件。然而，一旦目录项被读入内存，VFS就把它转换成基于<em>dentry</em>结构的一个目录项对象，该结构的代码如下：</p>
+
+<h4 id="includelinuxdcacheh">&lt;include/linux/dcache.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">dentry</span> <span class="p">{</span>
+    <span class="n">atomic_t</span>     <span class="n">d_count</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">d_flags</span><span class="p">;</span>
+    <span class="n">spinlock_t</span>   <span class="n">d_lock</span><span class="p">;</span>
+    <span class="kt">int</span>          <span class="n">d_mounted</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="n">d_inode</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">hlist_node</span> <span class="n">d_hash</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="n">d_parent</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">qstr</span> <span class="n">d_name</span><span class="p">;</span>
+
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">d_lru</span><span class="p">;</span>
+    <span class="k">union</span> <span class="p">{</span>
+        <span class="k">struct</span> <span class="n">list_head</span> <span class="n">d_child</span><span class="p">;</span>
+        <span class="k">struct</span> <span class="n">rcu_head</span> <span class="n">d_rcu</span><span class="p">;</span>
+    <span class="p">}</span> <span class="n">d_u</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">d_subdirs</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span> <span class="n">d_alias</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">d_time</span><span class="p">;</span>
+    <span class="k">const</span> <span class="k">struct</span> <span class="n">dentry_operations</span> <span class="o">*</span><span class="n">d_op</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">super_block</span> <span class="o">*</span><span class="n">d_sb</span><span class="p">;</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">d_fsdata</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">d_iname</span><span class="p">[</span><span class="n">DNAME_INLINE_LEN_MIN</span><span class="p">];</span>
+<span class="p">};</span></code></pre></div>
+
+<p>其中目录项对象的字段如下：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>d_count</td>
+      <td>目录项对象引用计数器</td>
+    </tr>
+    <tr>
+      <td>d_flag</td>
+      <td>目录项高速缓存标志</td>
+    </tr>
+    <tr>
+      <td>d_lock</td>
+      <td>保护目录项对象的自旋锁</td>
+    </tr>
+    <tr>
+      <td>d_inode</td>
+      <td>与文件名关联的索引节点</td>
+    </tr>
+    <tr>
+      <td>d_parent</td>
+      <td>父目录的目录项对象</td>
+    </tr>
+    <tr>
+      <td>d_name</td>
+      <td>文件名</td>
+    </tr>
+    <tr>
+      <td>d_lru</td>
+      <td>用于未使用目录项链表的指针</td>
+    </tr>
+    <tr>
+      <td>d_child</td>
+      <td>对目录而言，用于同一父母路中的目录项链表的指针</td>
+    </tr>
+    <tr>
+      <td>d_subdirs</td>
+      <td>对目录而言，子目录链表的头</td>
+    </tr>
+    <tr>
+      <td>d_alias</td>
+      <td>用于与统一索引节点（别名）相关的目录项链表的指针</td>
+    </tr>
+    <tr>
+      <td>d_time</td>
+      <td>由d_revalidate方法使用</td>
+    </tr>
+    <tr>
+      <td>d_op</td>
+      <td>目录项方法</td>
+    </tr>
+    <tr>
+      <td>d_sb</td>
+      <td>文件的超级块对象</td>
+    </tr>
+    <tr>
+      <td>d_fsdata</td>
+      <td>依赖于文件系统的数据</td>
+    </tr>
+    <tr>
+      <td>d_rcu</td>
+      <td>回收目录项时由RCU描述符使用</td>
+    </tr>
+    <tr>
+      <td>d_cookie</td>
+      <td>指向内核配置文件使用的数据结构的指针</td>
+    </tr>
+    <tr>
+      <td>d_hash</td>
+      <td>指向散列表表项链表的指针</td>
+    </tr>
+    <tr>
+      <td>d_mounted</td>
+      <td>对目录而言，用于记录安装该目录项的文件系统数的计数器</td>
+    </tr>
+    <tr>
+      <td>d_iname</td>
+      <td>存放短文件名的空间</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>每个目录项可以处于以下四种状态：</p>
+
+<ol>
+  <li>空闲状态。</li>
+  <li>未使用状态。</li>
+  <li>正在使用状态。</li>
+  <li>负状态。</li>
+</ol>
+
+<p><strong>空闲状态</strong></p>
+
+<p>处于该状态的目录项对象不包括有效信息，而且还没有被VFS使用，对应的内存区由slab分配器进行处理。</p>
+
+<p><strong>未使用状态</strong></p>
+
+<p>处于该状态的目录项对象当前还没有被内核使用。该对象的引用计数器<em>d_count</em>的值未0，但其<em>i_node</em>字段仍然指向关联的索引节点。该目录项对象包含有效信息，但为了在必要时回收内存，它的内容可能被丢弃。</p>
+
+<p><strong>正在使用状态</strong></p>
+
+<p>处于该状态的目录项对象当前正在被内核使用，该对象的引用计数器<em>d_count</em>的值未正数，其<em>d_inode</em>字段指向关联的索引节点对象。该目录项对象包含有效的信息，并且不能被丢弃。</p>
+
+<p><strong>负状态</strong></p>
+
+<p>与目录项关联的索引节点不存在，那是因为相应的磁盘索引节点已被删除，或者因为目录项对象时通过解析一个不存在的文件的路径名创建的。目录项对象的<em>d_inode</em>字段设置为<em>NULL</em>，但该对象仍然被保存在目录项高速缓存中，以便后续对统一文件目录名的查找操作能够快速完成<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。</p>
+
+<p>与目录项对象关联的方法称为目录项操作，这些方法由<em>dentry_operations</em>结构描述，该结构的地址放在目录项对象的<em>d_op</em>字段中。代码如下：</p>
+
+<h4 id="includelinuxdcacheh-1">&lt;include/linux/dcache.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">dentry_operations</span> <span class="p">{</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">d_revalidate</span><span class="p">)(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">nameidata</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">d_hash</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">qstr</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">d_compare</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">qstr</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">qstr</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">d_delete</span><span class="p">)(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">d_release</span><span class="p">)(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">void</span> <span class="p">(</span><span class="o">*</span><span class="n">d_iput</span><span class="p">)(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">char</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="n">d_dname</span><span class="p">)(</span><span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="kt">char</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">);</span>
+<span class="p">};</span></code></pre></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>函数名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>d_revalidate(dentry, nameidate)</td>
+      <td>在把目录项对象转换为一个文件路径名之前，判定该目录项对象是否仍然有效。缺省的VFS函数什么也不做，而网络文件系统可以指定自己的函数</td>
+    </tr>
+    <tr>
+      <td>d_hash(dentry, name)</td>
+      <td>生成一个散列值，这是用于目录项散列表、特定于具体文件系统的散列函数</td>
+    </tr>
+    <tr>
+      <td>d_compare(dir, name1, name2)</td>
+      <td>比较两个文件名</td>
+    </tr>
+    <tr>
+      <td>d_delete(dentry)</td>
+      <td>当对目录项对象的最后一个引用被删除，调用该方法，缺省的VFS函数什么也不做</td>
+    </tr>
+    <tr>
+      <td>d_release(dentry)</td>
+      <td>当要释放一个目录项对象时，调用该方法</td>
+    </tr>
+    <tr>
+      <td>d_input(dentry, ino)</td>
+      <td>当一个目录对象变为『负』状态时，调用该方法</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>负状态这个名词容易使人误解，因为根本不涉及任何负值。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#目录项">#目录项</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/file-object/" class="pre">&lt; 文件对象</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/dentry-cache/" class="next">目录项高速缓存 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments virtual_filesystem虚拟文件系统_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章目录项对象写于2014年05月16日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

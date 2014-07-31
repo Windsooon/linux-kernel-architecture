@@ -1,0 +1,507 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>文件对象|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 文件对象..." name="description"/>
+  <meta content="文件," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/file-object/" />
+  <meta property="og:title" content="文件对象" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 文件对象..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">文件对象</div>
+
+  <div class="content virtual_filesystem虚拟文件系统_content_css">
+    <p>文件对象描述符进程怎样与一个打开的文件进行交互，文件对象是在文件被打开时间创建的一个file结构组成，代码如下：</p>
+
+<h4 id="includelinuxfsh">&lt;include/linux/fs.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">file</span> <span class="p">{</span>
+    <span class="k">union</span> <span class="p">{</span>
+        <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">fu_list</span><span class="p">;</span>
+        <span class="k">struct</span> <span class="n">rcu_head</span>     <span class="n">fu_rcuhead</span><span class="p">;</span>
+    <span class="p">}</span> <span class="n">f_u</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">path</span>     <span class="n">f_path</span><span class="p">;</span>
+<span class="cp">#define f_dentry    f_path.dentry
+#define f_vfsmnt    f_path.mnt
+</span>    <span class="k">const</span> <span class="k">struct</span> <span class="n">file_operations</span>    <span class="o">*</span><span class="n">f_op</span><span class="p">;</span>
+    <span class="n">spinlock_t</span>      <span class="n">f_lock</span><span class="p">;</span>
+    <span class="n">atomic_long_t</span>   <span class="n">f_count</span><span class="p">;</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span>    <span class="n">f_flags</span><span class="p">;</span>
+    <span class="n">fmode_t</span>         <span class="n">f_mode</span><span class="p">;</span>
+    <span class="n">loff_t</span>          <span class="n">f_pos</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">fown_struct</span>   <span class="n">f_owner</span><span class="p">;</span>
+    <span class="k">const</span> <span class="k">struct</span> <span class="n">cred</span>    <span class="o">*</span><span class="n">f_cred</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">file_ra_state</span> <span class="n">f_ra</span><span class="p">;</span>
+
+    <span class="n">u64</span>                  <span class="n">f_version</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_SECURITY
+</span>    <span class="kt">void</span>                 <span class="o">*</span><span class="n">f_security</span><span class="p">;</span>
+<span class="cp">#endif
+</span>    <span class="kt">void</span>                 <span class="o">*</span><span class="n">private_data</span><span class="p">;</span>
+
+<span class="cp">#ifdef CONFIG_EPOLL
+</span>    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">f_ep_links</span><span class="p">;</span>
+    <span class="k">struct</span> <span class="n">list_head</span>    <span class="n">f_tfile_llink</span><span class="p">;</span>
+<span class="cp">#endif </span><span class="cm">/* #ifdef CONFIG_EPOLL */</span><span class="cp">
+</span>    <span class="k">struct</span> <span class="n">address_space</span>    <span class="o">*</span><span class="n">f_mapping</span><span class="p">;</span>
+<span class="cp">#ifdef CONFIG_DEBUG_WRITECOUNT
+</span>    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">f_mnt_write_state</span><span class="p">;</span>
+<span class="cp">#endif
+</span><span class="p">};</span></code></pre></div>
+
+<p>其中文件对象的字段如下：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>字段</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>fu_list</td>
+      <td>用于通用文件对象链表的指针</td>
+    </tr>
+    <tr>
+      <td>fu_rcuhead</td>
+      <td>用于rcu读写拷贝的链表头</td>
+    </tr>
+    <tr>
+      <td>f_dentry</td>
+      <td>与文件相关的目录项对象</td>
+    </tr>
+    <tr>
+      <td>f_vfsmnt</td>
+      <td>含有该文件的已安装文件系统</td>
+    </tr>
+    <tr>
+      <td>f_op</td>
+      <td>指向文件操作表的指针</td>
+    </tr>
+    <tr>
+      <td>f_count</td>
+      <td>文件对象的引用计数器</td>
+    </tr>
+    <tr>
+      <td>f_flags</td>
+      <td>打开文件时所指定的标志</td>
+    </tr>
+    <tr>
+      <td>f_mode</td>
+      <td>进程的访问模式</td>
+    </tr>
+    <tr>
+      <td>f_error</td>
+      <td>网络写操作的错误码</td>
+    </tr>
+    <tr>
+      <td>f_pos</td>
+      <td>当前文件位移量，也就是文件指针</td>
+    </tr>
+    <tr>
+      <td>f_owner</td>
+      <td>通过信号进行I/O事件通知的数据</td>
+    </tr>
+    <tr>
+      <td>f_uid</td>
+      <td>用户的UID</td>
+    </tr>
+    <tr>
+      <td>f_gid</td>
+      <td>用户的GID</td>
+    </tr>
+    <tr>
+      <td>f_ra</td>
+      <td>文件的预读状态</td>
+    </tr>
+    <tr>
+      <td>f_version</td>
+      <td>版本号，每次使用后自动递增</td>
+    </tr>
+    <tr>
+      <td>f_security</td>
+      <td>指向文件对象的安全结构的指针</td>
+    </tr>
+    <tr>
+      <td>parivate_data</td>
+      <td>指向特定文件系统或设备驱动程序所需的数据的指针</td>
+    </tr>
+    <tr>
+      <td>f_ep_links</td>
+      <td>文件的事件轮询等待者链表的头</td>
+    </tr>
+    <tr>
+      <td>f_ep_lock</td>
+      <td>保护f_ep_links链表的自旋锁</td>
+    </tr>
+    <tr>
+      <td>f_mapping</td>
+      <td>指向文件地址空间对象的指针</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>存放在文件对象中的主要信息是文件指针，即文件中当前的位置，下一个操作将在该位置发生。由于几个进程可能同时访问同一个文件，因此文件指针必须存放在文件对象而不是索引节点对象中。</p>
+
+<p>文件对象通过一个名为<em>filp</em>的<em>slab</em>高速缓存分配，<em>filp</em>描述符地址存放在<em>filp_cachep</em>变量中。由于分配的文件对象数目是有限的，因此<em>files_stat</em>变量在其<em>max_files</em>字段中指定了可分配文件对象的最大数目，也就是系统可同事访问的最大文件数。</p>
+
+<p>内核初始化期间，<em>files_init()</em>函数把<em>max_files</em>字段设置为可用RAM大小的1/10。不过系统管理员可以修改这个值。而且，即使<em>max_files</em>文件对象已经被分配，超级用户也总是可以获得一个文件对象。</p>
+
+<p>『在使用』文件对象包含在由具体文件系统的超级块所确立的几个链表中，每个超级块多想把文件对象链表的头存放在<em>s_files</em>字段中，因此，属于不同文件系统的文件对象就包含在不同的链表中。连表中分别指向前一个元素和后一个元素的指针都存放在文件对象的<em>f_list</em>字段中。<em>files_lock</em>自旋锁保护超级块<em>s_files</em>链表免受多处理器系统上的同时访问。</p>
+
+<p>文件对象的<em>f_count</em>字段是一个引用计数器，它记录使用文件对象的进程数<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。当内核本身使用该文件对象时也要增加计数器的值。</p>
+
+<p>当VFS代表进程必须打开一个文件时，它调用<em>get_empty_filp()</em>函数来分配一个全新的文件对象。该函数调用<em>kmem_cache_alloc()</em>从<em>filp</em>高速缓存中获得空闲的文件对象，然后初始化这个字段。</p>
+
+<hr />
+
+<p>每个文件系统都有其自己的文件操作集合，执行诸如读写文件这样的操作。当内核将一个索引节点从磁盘装入内存时，就会把指向这些文件操作的指针存放在<em>file_operations</em>结构中，而该结构的地址存放在该索引节点inode对象的<em>i_fop</em>字段中。</p>
+
+<p>当进程打开这个文件时，VFS就用存放在索引节点中的这个地址初始化新文件对象的<em>f_op</em>字段，使得对文件操作的后续调用能够使用这些函数，如果需要，VFS随后页可以通过在<em>f_op</em>字段存放一个新值而修改文件操作的集合。</p>
+
+<p>文件操作集合如下：</p>
+
+<h4 id="includelinuxfsh-1">&lt;include/linux/fs.h&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">struct</span> <span class="n">file_operations</span> <span class="p">{</span>
+    <span class="k">struct</span> <span class="n">module</span> <span class="o">*</span><span class="n">owner</span><span class="p">;</span>
+    <span class="n">loff_t</span> <span class="p">(</span><span class="o">*</span><span class="n">llseek</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="n">loff_t</span><span class="p">,</span> <span class="kt">int</span><span class="p">);</span>
+    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">read</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="kt">char</span> <span class="n">__user</span> <span class="o">*</span><span class="p">,</span>
+        <span class="kt">size_t</span><span class="p">,</span> <span class="n">loff_t</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">write</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="k">const</span> <span class="kt">char</span> <span class="n">__user</span> <span class="o">*</span><span class="p">,</span>
+        <span class="kt">size_t</span><span class="p">,</span> <span class="n">loff_t</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">aio_read</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">kiocb</span> <span class="o">*</span><span class="p">,</span> <span class="k">const</span> <span class="k">struct</span> <span class="n">iovec</span> <span class="o">*</span><span class="p">,</span>
+        <span class="kt">unsigned</span> <span class="kt">long</span><span class="p">,</span> <span class="n">loff_t</span><span class="p">);</span>
+    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">aio_write</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">kiocb</span> <span class="o">*</span><span class="p">,</span> <span class="k">const</span> <span class="k">struct</span> <span class="n">iovec</span> <span class="o">*</span><span class="p">,</span>
+        <span class="kt">unsigned</span> <span class="kt">long</span><span class="p">,</span> <span class="n">loff_t</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">readdir</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="p">,</span> <span class="n">filldir_t</span><span class="p">);</span>
+    <span class="kt">unsigned</span> <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">poll</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">poll_table_struct</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">ioctl</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span>
+        <span class="kt">unsigned</span> <span class="kt">int</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">long</span><span class="p">);</span>
+    <span class="kt">long</span> <span class="p">(</span><span class="o">*</span><span class="n">unlocked_ioctl</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">long</span><span class="p">);</span>
+    <span class="kt">long</span> <span class="p">(</span><span class="o">*</span><span class="n">compat_ioctl</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">long</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">mmap</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">vm_area_struct</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">open</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">flush</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="n">fl_owner_t</span> <span class="n">id</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">release</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">inode</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">fsync</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">dentry</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span> <span class="n">datasync</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">aio_fsync</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">kiocb</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span> <span class="n">datasync</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">fasync</span><span class="p">)</span> <span class="p">(</span><span class="kt">int</span><span class="p">,</span> <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">lock</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">,</span> <span class="k">struct</span> <span class="n">file_lock</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">sendpage</span><span class="p">)</span> <span class="p">(</span>
+        <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="p">,</span>
+        <span class="kt">int</span><span class="p">,</span> <span class="kt">size_t</span><span class="p">,</span> <span class="n">loff_t</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">);</span>
+    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="p">(</span><span class="o">*</span><span class="n">get_unmapped_area</span><span class="p">)(</span>
+        <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">long</span><span class="p">,</span>
+        <span class="kt">unsigned</span> <span class="kt">long</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">long</span><span class="p">,</span>
+        <span class="kt">unsigned</span> <span class="kt">long</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">check_flags</span><span class="p">)(</span><span class="kt">int</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">flock</span><span class="p">)</span> <span class="p">(</span><span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="kt">int</span><span class="p">,</span>
+        <span class="k">struct</span> <span class="n">file_lock</span> <span class="o">*</span><span class="p">);</span>
+    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">splice_write</span><span class="p">)(</span><span class="k">struct</span> <span class="n">pipe_inode_info</span> <span class="o">*</span><span class="p">,</span>
+        <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="n">loff_t</span> <span class="o">*</span><span class="p">,</span>
+        <span class="kt">size_t</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span><span class="p">);</span>
+    <span class="kt">ssize_t</span> <span class="p">(</span><span class="o">*</span><span class="n">splice_read</span><span class="p">)(</span><span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span>
+        <span class="n">loff_t</span> <span class="o">*</span><span class="p">,</span> <span class="k">struct</span> <span class="n">pipe_inode_info</span> <span class="o">*</span><span class="p">,</span>
+        <span class="kt">size_t</span><span class="p">,</span> <span class="kt">unsigned</span> <span class="kt">int</span><span class="p">);</span>
+    <span class="kt">int</span> <span class="p">(</span><span class="o">*</span><span class="n">setlease</span><span class="p">)(</span>
+        <span class="k">struct</span> <span class="n">file</span> <span class="o">*</span><span class="p">,</span> <span class="kt">long</span><span class="p">,</span>
+        <span class="k">struct</span> <span class="n">file_lock</span> <span class="o">**</span><span class="p">);</span>
+<span class="p">};</span></code></pre></div>
+
+<table>
+  <thead>
+    <tr>
+      <th>函数名</th>
+      <th>说明</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>llseek(file, offset, origin)</td>
+      <td>更新文件指针</td>
+    </tr>
+    <tr>
+      <td>read(file, buf, count, offset)</td>
+      <td>从文件的offset处开始读count个字节，然后增加offset的值</td>
+    </tr>
+    <tr>
+      <td>aio_read(req, buf, len, pos)</td>
+      <td>启动一个异步I/O操作，从文件的pos处开始读处len个字节的数据并将它们放入buf中</td>
+    </tr>
+    <tr>
+      <td>write(file, buf, count, offset)</td>
+      <td>从文件的offset处开始写入count个字节然后增加offset的值</td>
+    </tr>
+    <tr>
+      <td>aio_write(req, buf, len, pos)</td>
+      <td>启动一个异步I/O的操作，从buf中取出len个字节写入pos处</td>
+    </tr>
+    <tr>
+      <td>readdir(dir, dirent, filldir)</td>
+      <td>返回一个目录的下一个目录项，返回值存入参数dirent</td>
+    </tr>
+    <tr>
+      <td>poll(file, poll_table)</td>
+      <td>检查是否在一个文件上有操作发生，如果没有则睡眠，知道该文件上有操作发生</td>
+    </tr>
+    <tr>
+      <td>ioctl(inode, file, cmd, arg)</td>
+      <td>项一个基本硬件设备发送命令</td>
+    </tr>
+    <tr>
+      <td>unlocked_ioctl(file, cmd, arg)</td>
+      <td>与ioctl方法类似，但是不用获得大内核锁</td>
+    </tr>
+    <tr>
+      <td>compat_ioctl(file, cmd, arg)</td>
+      <td>64位的内核使用该方法执行32位的系统调用ioctl</td>
+    </tr>
+    <tr>
+      <td>mmap(file, vma)</td>
+      <td>执行文件的内存映射，并将映射放入进程的地址空间</td>
+    </tr>
+    <tr>
+      <td>open(inode, file)</td>
+      <td>通过创建一个新的文件对象而打开一个我呢贱，并把它链接到相应的索引节点对象</td>
+    </tr>
+    <tr>
+      <td>flush(file)</td>
+      <td>当打开文件的引用被关闭时调用该方法，该方法取决于文件系统</td>
+    </tr>
+    <tr>
+      <td>release(inode, file)</td>
+      <td>释放文件对象，当打开文件的最后一个引用被关闭时调用该方法</td>
+    </tr>
+    <tr>
+      <td>fsync(file, dentry, flag)</td>
+      <td>将文件所缓存的全部数据写入磁盘</td>
+    </tr>
+    <tr>
+      <td>aio_fsync(req, flag)</td>
+      <td>启动一次异步I/O刷新操作</td>
+    </tr>
+    <tr>
+      <td>fasync(fd, file, on)</td>
+      <td>通过信号来启用或禁止I/O时间通告</td>
+    </tr>
+    <tr>
+      <td>lock(file, cmd, file_lock)</td>
+      <td>对file文件申请一个锁</td>
+    </tr>
+    <tr>
+      <td>readv(file, vector, count, offset)</td>
+      <td>从文件中读字节，并把结果放入vector描述的缓冲区中，缓冲区的个数由count指定</td>
+    </tr>
+    <tr>
+      <td>writev(file, vector, count, offset)</td>
+      <td>把vector描述的缓冲区中的字节写入文件，缓冲区的个数由count指定</td>
+    </tr>
+    <tr>
+      <td>sendfile(in_file, offset, count, file_send_actor, out_file)</td>
+      <td>把数据从in_file传送到out_file中</td>
+    </tr>
+    <tr>
+      <td>sendpage(file, page, offset, size, pointer, fill)</td>
+      <td>把数据从文件传送到页高速缓存的页，这个底层方法由sendfile()和用于套接字的网络代码使用</td>
+    </tr>
+    <tr>
+      <td>get_unmapped_area(file, addr, len, offset, flags)</td>
+      <td>获得一个未使用的地址范围来隐射文件</td>
+    </tr>
+    <tr>
+      <td>check_flags(flags)</td>
+      <td>当设置文件的状态标志时，fcntl()系统调用的服务例程用该方法执行附加的检查，目前只适用于NFS网络文件系统</td>
+    </tr>
+    <tr>
+      <td>dir_notify(file, arg)</td>
+      <td>当建立一个目录更改消息时，由fcntl()系统调用的服务例程调用该方法，当前只适用于CIFS网络文件系统</td>
+    </tr>
+    <tr>
+      <td>flock(file, flag, lock)</td>
+      <td>用于定制flock()系统调用的行为，Linux文件系统不使用该方法</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>以CLONE_FILES标志创建的轻量级进程共享打开文件表，因此它们可以使用相同的文件对象。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#文件">#文件</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/slab-free/" class="pre">&lt; slab释放</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/dentry-object/" class="next">目录项对象 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments virtual_filesystem虚拟文件系统_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章文件对象写于2014年05月15日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

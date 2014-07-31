@@ -1,0 +1,288 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>slab分配的原理|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 slab分配的原理..." name="description"/>
+  <meta content="slab,分配器," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/how-slab-work/" />
+  <meta property="og:title" content="slab分配的原理" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 slab分配的原理..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">slab分配的原理</div>
+
+  <div class="content mm_manage内存管理_content_css">
+    <p>slab分配器由一个紧密地交织的数据和内存结构的网络组成，出看起来不容易理解，所以，重要的是获得各个结构之间关系的一个理解，理解之后我们才能够深入的进行slab分配器代码的查看。</p>
+
+<p>基本上slab缓存由下图所示的两部分组成：保存管理性数据的缓存对象和保存被管理对象的各个slab。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/slab2.png" alt="slab" style="max-width:500px" /></p>
+
+<p class="center">slab分配器的各个部分</p>
+
+<p>每个缓存只负责一种对象类型<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>，或提供一般性的缓冲区。各个缓冲中slab的数目各有不同，这与已经使用的页的数目、对象长度和被管理对象的数目有关。另外，系统中所有的缓存都保存在一个双链表中。这使得内核有机会依次遍历所有的缓存，这是有必要的，例如在发生内存不足的情况下，内核可能需要缩减分配给缓存的内存数量。</p>
+
+<p>如果更加仔细的研究缓存的结构，就会注意到一些细节，如下图：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/slab3.png" alt="slab" style="max-width:600px" /></p>
+
+<p class="center">slab缓存的精细结构</p>
+
+<p>除了管理性数据，即易用和空闲对象或标志寄存器的数目，缓存结构包括两个特别重要的成员。</p>
+
+<ol>
+  <li>指向一个数组的指针，其中保存了各个CPU最后释放的对象。</li>
+  <li>每个内存结点都对应3个表头，用于组织slab的链表。第一个链表包含完全用尽的slab，第二个是部分空闲的slab，第三个是空闲的slab。</li>
+</ol>
+
+<p>缓存结构指向一个数组，其中包含了与系统CPU数目相同的数组项。每一个元素都是一个指针，指向一个进一步的结构称之为数组缓存（<em>array cache</em>），其中包含了对应于特定系统CPU的管理数据，但并非用于缓存。管理性数据之后的内存区包含了一个指针数组，各个数组项指向<em>slab</em>中未使用的对象。</p>
+
+<p>为了更好地利用CPU高速缓存，这些per-CPU指针是很重要的，在分配和释放对象时，采用后进先出（<em>last in  first out，LIFO</em>）原理。内核假定刚释放的对象仍然处于CPU高速缓存中，会尽快再次分配它以便响应下一个分配请求。仅当per-CPU缓存为空时，才会用slab中的空闲对象重新填充它们。</p>
+
+<p>这样，对象分配的体系就形成了一个三层的层次结构，分配成本和操作对CPU高速缓存和TLB的负面影响逐渐升高。</p>
+
+<ol>
+  <li>仍然处于CPU高速缓存中的per-CPU对象。</li>
+  <li>现存slab中未使用的对象。</li>
+  <li>刚使用伙伴系统分配的新slab中未使用的对象。</li>
+</ol>
+
+<p>对象在slab中并非连续排列，而是按照一个相当复杂的方案分布，如下图：</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/slab4.png" alt="slab" style="max-width:600px" /></p>
+
+<p class="center">slab的精细结构</p>
+
+<p>用于每个对象的长度并不反应其确切的大小，相反，长度已经进行了舍入以满足某些对齐方式的要求。有两种可用的备选对齐方案：</p>
+
+<ol>
+  <li>slab创建时使用<em>SLAB_HWCACHE_ALIGN</em>，slab用户可以要求对象按硬件缓存行对齐。要么按照<em>cache_line_size</em>的返回值进行对齐，该函数返回特定于处理器的L1缓存大小。如果对象小于缓存行长度的一般，那么将多个对象放入一个缓存行。</li>
+  <li>如果不要求按硬件缓存行对齐，那么内核保证对象按<em>BYTES_PER_WORD</em>对齐，该值时表示<em>void</em>指针所需字节的数目。</li>
+</ol>
+
+<p>在32位处理器上，<em>void</em>指针需要4个字节。因此，对有6个字节的对象，需要8=2x4个字节，对于的字节称为填充字节。</p>
+
+<p>填充字节可以加速对slab中对象的访问，如果使用对齐的地址，那么几乎在所有的体系结构上，内存访问都会更快，这弥补了使用填充字节必然导致需要更多内存的不利情况。管理结构位于每个slab的起始处，保存了所有的管理结构。其后面时一个数组。</p>
+
+<p>每个数组项对应于slab中的一个对象，只有在对象没有分配时，相应的数组项才有意义。在这种情况下，它指定了下一个空闲对象的索引。由于最低编号的空闲对象的编号还保存在slab起始处的管理结构中，内核无需使用链表或其他复杂的关联机制就可以轻松找到当前可用的所有对象，数组的最后一项总是一个结束标记，值为<em>BUFCTL_END</em>。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/slab5.png" alt="slab" style="max-width:600px" /></p>
+
+<p class="center">slab中空闲对象的管理</p>
+
+<p>大多数情况下，slab内存区的长度时不能被对象长度整除的，因此，内核就有了一些多余的内存，可以用来以偏移量的形式给slab『着色』。缓存的各个slab成员会指定不同的偏移量，以便将数据定位到不同的缓存行，因而slab开始和结束处的空闲内存时不同的。在计算偏移量时，内核必须考虑其他的对齐因素，例如L1高速缓存中数据结构的对齐。</p>
+
+<p>管理数据可以放置在slab自身，也可以放置到使用kmalloc分配的不同内存区中，内存如何选择取决于slab的长度和已用对象的数量。相应的选择标准稍后讨论，管理数据和slab内存之间的关系很容易建立，因为slab头包含了一个指针，指向slab数据区的起始处，无论管理数据是否在slab上。</p>
+
+<p>最后，内核需要一种方法通过对象自身即可识别slab以及对象驻留的缓存，根据对象的物理内存地址，可以找到相关的页，因此可以在全局的<em>mem_map</em>数组中找到对应的<em>page</em>实例。<em>page</em>结构包含一个连表元素，用于管理各种链表中的页，对于slab缓存中的页而言，该指针时不必要的，可以用于其他用途。</p>
+
+<ol>
+  <li>page-&gt;lru.next指向页驻留的缓存和管理结构。</li>
+  <li>page-&gt;lru.prev指向保存该页的slab的管理结构。</li>
+</ol>
+
+<p>设置或者读取slab信息分别由<em>set_page_slab</em>和<em>get_page_slab</em>函数完成，带有<em>__cache</em>后缀的函数则处理缓存信息的设置和读取。</p>
+
+<h4 id="mmslabc">&lt;mm/slab.c&gt;</h4>
+
+<div class="highlight"><pre><code class="language-c--" data-lang="c++"><span class="k">static</span> <span class="kr">inline</span> <span class="kt">void</span>
+<span class="nf">page_set_cache</span><span class="p">(</span><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">,</span> <span class="k">struct</span> <span class="n">kmem_cache</span> <span class="o">*</span><span class="n">cache</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">page</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">.</span><span class="n">next</span> <span class="o">=</span> <span class="p">(</span><span class="k">struct</span> <span class="n">list_head</span> <span class="o">*</span><span class="p">)</span><span class="n">cache</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">static</span> <span class="kr">inline</span> <span class="k">struct</span>
+<span class="n">kmem_cache</span> <span class="o">*</span><span class="nf">page_get_cache</span><span class="p">(</span><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">page</span> <span class="o">=</span> <span class="n">compound_head</span><span class="p">(</span><span class="n">page</span><span class="p">);</span>
+    <span class="n">BUG_ON</span><span class="p">(</span><span class="o">!</span><span class="n">PageSlab</span><span class="p">(</span><span class="n">page</span><span class="p">));</span>
+    <span class="k">return</span> <span class="p">(</span><span class="k">struct</span> <span class="n">kmem_cache</span> <span class="o">*</span><span class="p">)</span><span class="n">page</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">.</span><span class="n">next</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">static</span> <span class="kr">inline</span> <span class="kt">void</span>
+<span class="nf">page_set_slab</span><span class="p">(</span><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">,</span> <span class="k">struct</span> <span class="n">slab</span> <span class="o">*</span><span class="n">slab</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">page</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">.</span><span class="n">prev</span> <span class="o">=</span> <span class="p">(</span><span class="k">struct</span> <span class="n">list_head</span> <span class="o">*</span><span class="p">)</span><span class="n">slab</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">static</span> <span class="kr">inline</span> <span class="k">struct</span> <span class="n">slab</span>
+<span class="o">*</span><span class="nf">page_get_slab</span><span class="p">(</span><span class="k">struct</span> <span class="n">page</span> <span class="o">*</span><span class="n">page</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="n">BUG_ON</span><span class="p">(</span><span class="o">!</span><span class="n">PageSlab</span><span class="p">(</span><span class="n">page</span><span class="p">));</span>
+    <span class="k">return</span> <span class="p">(</span><span class="k">struct</span> <span class="n">slab</span> <span class="o">*</span><span class="p">)</span><span class="n">page</span><span class="o">-&gt;</span><span class="n">lru</span><span class="p">.</span><span class="n">prev</span><span class="p">;</span>
+<span class="p">}</span></code></pre></div>
+
+<p>此外，内核还对分配给slab分配器的每个物理内存页都设置标志<em>PG_SLAB</em>。</p>
+<div class="footnotes">
+  <ol>
+    <li id="fn:1">
+      <p>例如struct unix_sock实例。 <a href="#fnref:1" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#slab">#slab</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#分配器">#分配器</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/soft-irq/" class="pre">&lt; 软中断</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/soft-irq-daemon-ksoftirqd/" class="next">软中断守护进程 &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments mm_manage内存管理_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章slab分配的原理写于2014年05月09日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

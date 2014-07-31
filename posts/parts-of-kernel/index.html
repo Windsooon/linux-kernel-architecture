@@ -1,0 +1,234 @@
+<!DOCTYPE HTML>
+<html>
+<!-- <html> -->
+<head>
+  <title>内核的体系结构|Linux Kernel Architecture 内核笔记</title>
+  <meta charset="utf-8" />
+<link rel="alternate" type="application/atom+xml" title="Recent Entries" href="/feed.xml">
+<link rel="icon" href="/images/icons/avatar.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="/style/css/bootstrap.css" type="text/css" media="screen">
+<link rel="stylesheet" href="/style/css/syntax.css" type="text/css" media="screen">
+<script type="text/javascript" src="/style/jquery-1.7.1.min.js"></script>
+
+
+<link rel="stylesheet" href="/style/style.css" type="text/css">
+
+<script>
+$(document).ready(function(){
+    $('.nav a').hover(
+        function(){
+            $(this).animate({opacity: 0.3}, 400)
+        }, 
+        function(){
+            $(this).animate({opacity: 1}, 400)
+        });
+});
+function getURLParameter(name) {
+    return decodeURI(
+        (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+    );
+}
+</script>
+
+<style>
+.archive li {
+    list-style: decimal;
+    margin-left: 50px;
+    line-height: 2em;
+}
+
+.archive .year {
+    list-style: none;
+}
+</style>
+  <script type="text/javascript">
+        var BYB = {};
+  </script>
+  <script type="text/javascript">
+    BYB.includeScript = function(file,callback){
+    var _doc = document.getElementsByTagName('head')[0];
+    var js = document.createElement('script');
+    js.setAttribute('type', 'text/javascript');
+    js.setAttribute('src', file);
+    _doc.appendChild(js);
+    
+    if (!/*@cc_on!@*/0) { //if not IE
+    //Firefox2、Firefox3、Safari3.1+、Opera9.6+ support js.onload
+    js.onload = function () {
+    callback();
+    }
+    } else {
+    //IE6、IE7 support js.onreadystatechange
+    js.onreadystatechange = function () {
+    if (js.readyState == 'loaded' || js.readyState == 'complete') {
+    callback();
+    }
+    }
+    }
+    return false;
+    }
+  </script>
+  <meta content="linux kernel architecture 内核笔记 内核的体系结构..." name="description"/>
+  <meta content="进程,切换,调度,线程,命名空间," name="keywords"/>
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="http://guojing.me/linux-kernel-architecture//posts/parts-of-kernel/" />
+  <meta property="og:title" content="内核的体系结构" />
+  <meta property="og:description" content="linux kernel architecture 内核笔记 内核的体系结构..." />
+</head>
+<body>
+
+<div class="banner">
+<ul class="nav nav-pills">
+  <li><a href="/">Home</a></li>
+  <li><a href="/archive/">Archive</a></li>
+  <li><a href="/linux-kernel-architecture/archive/">Kernel</a></li>
+</ul>
+
+</div>
+
+<div class="container">
+
+<div class="main clearfix">
+  <div class="title">内核的体系结构</div>
+
+  <div class="content basic基础_content_css">
+    <p>尽管Linux是整体式的宏内核，但其具有相当良好的结构，尽管如此，Linux内核各个组成部分之间的彼此交互是不可避免的。各部分会共享数据结构，而且与严格隔离的系统相比，各部分（因为性能原因）协同工作时需要更多的函数。</p>
+
+<p>下面是一个粗略的草图，概述了组成完成Linux系统的各个层次，以及内核所包含的一些重要子系统。</p>
+
+<p class="center"><img src="/linux-kernel-architecture/images/linux-system.png" alt="system" style="max-width:600px" /></p>
+
+<p class="center">内核大体的体系结构</p>
+
+<h3 id="section">进程/切换/调度</h3>
+
+<p>传统上，UNIX操作系统下运行的应用程序、服务器以及其他程序都称为进程。每个进程都在CPU的虚拟内存中分配地址空间。各个进程的地址空间是完全独立的，因此进程并不会意识倒彼此的存在。对它们自己来说，它也会认为自己是系统中唯一的进程，如果进程想要彼此通信，就需要特定的内核机制。</p>
+
+<p>Linux是多任务系统，虽然只是看上去并发的执行若干进程，但其实系统中同时真正在运行的进程数目不超过CPU的数目，因此内核会按照短的时间间隔在不同的进程之间切换，由于时间太快，用户是注意不到的，所以产生了并发的假象。</p>
+
+<ol>
+  <li>内核借助于CPU的帮助，负责进程切换的技术细节。给每个进程一种错觉，造成CPU总是可用的。</li>
+  <li>内核还必须确定如何在现存进程之间共享CPU时间，重要的获得的CPU时间多一些，次要的得到的少一点，确定哪个进程运行多长时间称为调度。</li>
+</ol>
+
+<h3 id="unix">UNIX进程</h3>
+
+<p>Linux对进程采用了一种层次系统，每个进程都依赖于一个父进程。内核启动init程序作为第一个进程，这个进程负责进一步的系统初始化操作。</p>
+
+<p>树型结构的扩展方式与新进程的创建方式密切相关，UNIX操作系统中创建进程有两种方式，一种是fork，一种是exec。</p>
+
+<ol>
+  <li>fork可以创建当前进程的一个副本，父进程和子进程只有PID（进程ID）不同。从使用角度来说，父进程内存的内存将被复制，Linux使用了copy on write<sup id="fnref:copyonwrite"><a href="#fn:copyonwrite" class="footnote">1</a></sup>来提高性能。</li>
+  <li>exec将一个新程序加载到当前进程的内存中并执行，旧程序的内存页将刷出，内容被替换为新数据，并执行新程序。</li>
+</ol>
+
+<h4 id="section-1">线程</h4>
+
+<p>当然系统除了进程以外，还提供了线程，有时也被成为轻量级进程。Linux使用clone方法创建线程。工作方式类似于fork，但启用了精确的检查，以确认哪些资源是和父进程共享，哪些资源为线程自己创建。在一定程度上，允许线程和进程之间的连续转换。</p>
+
+<h4 id="section-2">命名空间</h4>
+
+<p>命名空间则是将不同的进程进行分组，将它们隔离起来。在每个组里，进程同样有一个类似init的进程，每个组的资源对外是隔离的，这样的技术使得很多虚拟化技术得以发展，因为计算机上只需要有一个内核管理所有容器。<sup id="fnref:problem"><a href="#fn:problem" class="footnote">2</a></sup></p>
+
+<div class="footnotes">
+  <ol>
+    <li id="fn:copyonwrite">
+      <p>主要的原理是将内存复制操作延迟倒父进程或子进程向内存页面写入数据之前，在只读访问的情况下，主进程和子进程可以共享同一份内存块。 <a href="#fnref:copyonwrite" class="reversefootnote">&#8617;</a></p>
+    </li>
+    <li id="fn:problem">
+      <p>传统意义上来说，每个用户相当于拥有一台计算机，也就是说有一个CPU、内存等资源。当多个用户需要不同环境的时候，通常需要使用多台计算机来解决。Linux内核加上命名空间的概念之后，只需要一台计算机就能够隔离出不同的资源，进行虚拟化。 <a href="#fnref:problem" class="reversefootnote">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div>
+
+  <div class="forb">
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#进程">#进程</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#切换">#切换</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#调度">#调度</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#线程">#线程</a>
+  
+  <a href="http://guojing.me/linux-kernel-architecture/tags/#命名空间">#命名空间</a>
+  
+  </div>
+
+  <div class="suggest">
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/how-kernel-work/" class="pre">&lt; 内核</a>
+    
+    
+    
+        <a href="http://guojing.me/linux-kernel-architecture/posts/lru/" class="next">LRU &gt;</a>
+    
+    </div>
+</div>
+
+<!--
+<div class="comments basic基础_comments_css">
+<div id="disqus_container"> 
+    
+    <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
+        
+    <div id="disqus_thread"></div>
+</div>
+</div>
+-->
+
+<script type="text/javascript">
+    $(document).ready(function(){
+        $('#disqus_container .comment').on('click',function(){
+            $(this).html('加载中...');
+    var disqus_shortname = 'jguoer';
+            var that = this;
+            BYB.includeScript('http://' + disqus_shortname + '.disqus.com/embed.js',function(){$(that).remove()});
+        });
+});
+</script>
+
+<!--
+  Copryright GuoJing 未经允许，严禁直接从Github上转载我的文章，所有文章遵循CC协议，允许复制和转载，但需要保留原作者链接。
+  该文章内核的体系结构写于2014年03月13日。
+-->
+
+</div>
+<div class="footer">
+<!--
+    Copyright GuoJing, Theme designed by GuoJing
+    Theme name Simple
+    If you love this theme, please keep my copyright and link to my blog.
+    If you DON'T LIKE it and you CAN remove the link. but not share spirit.
+    如果你喜欢这个博客构架和皮肤，请保留我作为原作者的权利，我会感谢你。
+    你也可以不保留我作为原作者的权利，自然没有任何问题，但似乎没有共享精神。
+-->
+<!-- © Copryright by<a href="http://guojing.me/" target="_blank">GuoJing</a> 2012-2014 using <a href="http://www.github.com/" target="_blank">GitHub</a> and <a href="http://jekyllrb.com/" target="_blank">Jekyll</a> -->
+<div class="author">
+    <div class="icon">
+        <img src="/images/authors/guojing.jpg" alt="me"/>
+    </div>
+    <div class="name">
+        <a href="/about">GuoJing</a>
+    </div>
+    <div class="description">
+        Linux Kernel Architecture 内核笔记
+    </div>
+</div>
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-42721249-1', 'guojing.me');
+  ga('send', 'pageview');
+
+</script>
+</div>
+
+</body>
+</html>

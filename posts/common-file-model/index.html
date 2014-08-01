@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">通用文件模型</div>
 
-  <div class="content virtual_filesystem虚拟文件系统_content_css">
+  <div class="content 虚拟文件系统_content_css">
     <p>VFS所隐含的主要思想在于引入了一个通用文件模型（<em>common file model</em>），这个模型能够表示所有支持的文件系统。该模型严格反映传统Unix文件系统提供的文件模型。这非常强大，因为Linux希望以最小的额外开销运行它本地文件系统。不过，要实现每个具体的文件系统，必须将其物理组织结构转换为虚拟文件系统通用文件模型。</p>
 
 <p>例如，在通用文件模型中，每个目录被看作一个文件，可以包含若干文件和其他的子目录。但是，存在几个非Unix的基于磁盘的文件系统，它们利用文件分配表（<em>File Allocation Table，FAT</em>）存放每个文件在目录树中的位置，在这些文件系统中，存放的是目录而不是文件。为了符合VFS的通用文件模型，对上述基于FAT的文件系统的实现，Linux必须在必要的时候能够快速建立对应于目录的文件。这样的文件只作为内核内存的对象而存在。</p>
@@ -151,7 +151,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments virtual_filesystem虚拟文件系统_comments_css">
+<div class="comments 虚拟文件系统_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

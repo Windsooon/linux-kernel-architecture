@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">扩展分页PAE机制</div>
 
-  <div class="content mm内存寻址_content_css">
+  <div class="content 内存寻址_content_css">
     <p>处理器所支持的RAM容量受链接到地址总线上的地址管脚数限制。早起Intel处理器从80386到Pentium使用32位物理地址。从理论上讲，这样的系统上可以安装高达4GB的RAM，而实际上，由于用户进程线性地址空间的需要，内核不能直接对1GB以上的RAM进行寻址<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。</p>
 
 <p>然而，大型服务器需要大于4GB的RAM来同时运行上千的进程，实际上我们现在的很多计算机的RAM都可能超过这个量级。所有必须扩展32位的80x86结构所支持的RAM容量。实际上即便是使用32位操作系统模拟64位<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>，也会遇到一些问题，例如高低两个32位的数据同步问题。</p>
@@ -226,7 +226,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments mm内存寻址_comments_css">
+<div class="comments 内存寻址_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

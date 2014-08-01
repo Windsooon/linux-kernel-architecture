@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">僵尸进程</div>
 
-  <div class="content basic基础_content_css">
+  <div class="content 基础_content_css">
     <p>当父进程有子进程的时候，父进程需要知道子进程是否结束。wait4()系统调用允许进程等待，直到其中的一个子进程结束，wait4()返回已中止进程的进程标识符（Process ID，PID）。</p>
 
 <p>内核在执行这个系统调用时，检查子进程是否已经终止。引入僵尸进程的特殊状态是为了表示终止进程：父进程执行完wait4()调用之前，进程就一直停留在那种状态。系统调用处理程序从进程描述符字段中获取有关资源使用的一些数据；一旦得到了数据，就可以释放进程描述符。当进程执行wait4()调用时如果没有子进程结束，内核就把父进程设置为等待状态，一直到子进程结束<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。</p>
@@ -140,7 +140,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments basic基础_comments_css">
+<div class="comments 基础_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

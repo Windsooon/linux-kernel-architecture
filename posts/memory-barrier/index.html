@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">优化和内存屏障</div>
 
-  <div class="content kernel_preemption内核同步_content_css">
+  <div class="content 内核同步_content_css">
     <p>当使用优化的编译器时，我们的指令有时候并不会严格按照它们再源代码中出现的顺序执行，因为编译器可能重新安排汇编语言指令以另寄存器以最优化的方式使用。此外，现代的CPU通常并行地执行若干条指令，且可能重新安排内存访问，这种重新安排可以极大地加速程序的执行。</p>
 
 <p>当然，当处理器同步时，必须避免指令的重新排序，如果放在同步语句之后的一条指令再同步语句本身执行之前，就会出现失控，事实上，所有的同步原语起优化和内存屏障的作用。</p>
@@ -170,7 +170,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments kernel_preemption内核同步_comments_css">
+<div class="comments 内核同步_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

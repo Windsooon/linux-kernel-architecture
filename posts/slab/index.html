@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">slab分配器</div>
 
-  <div class="content mm_manage内存管理_content_css">
+  <div class="content 内存管理_content_css">
     <p>每当我们要分配内存的时候，我们会使用malloc，malloc是C语言中分配内存的函数，我们可以使用malloc及其在C标准库中的相关函数，大多数程序分配若干字节内存时，经常会调用这些函数。内核也必须经常分配内存，但无法借助于标准库的函数，之前描述的伙伴系统支持按页分配内存，但这个单位对于内核而言实在太大了。</p>
 
 <p>如果需要为一个10个字符的字符串分配空间，分配一个4KB或更多空间的完整页面，不仅仅浪费而且完全不可接收，所以内核需要将页拆分为更小的单位，以便可以容纳大量的小对象。</p>
@@ -174,7 +174,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments mm_manage内存管理_comments_css">
+<div class="comments 内存管理_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

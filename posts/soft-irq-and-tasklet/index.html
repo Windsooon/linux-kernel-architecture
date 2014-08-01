@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">软中断和tasklet</div>
 
-  <div class="content interrupt中断和异常_content_css">
+  <div class="content 中断和异常_content_css">
     <p>在由内核执行的几个任务之间有些不是紧急的，在必要的情况下它们可以被推迟一段时间。一个中断处理程序的几个中断服务例程之间时串行执行的，并且通常在一个中断的处理程序结束前，不应该再次出现这个中断。</p>
 
 <p>相反，可延迟中断可以在开中断的情况下执行，把可延迟中断从中断处理程序中抽出来有助于内核保持较短的响应时间。这对于哪些期望它们的中断能在几号秒内大刀处理的『急迫』应用来说是非常重要的。Linux 2.6通过可延迟函数和工作队列来执行的函数来实现以上问题。</p>
@@ -147,7 +147,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments interrupt中断和异常_comments_css">
+<div class="comments 中断和异常_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

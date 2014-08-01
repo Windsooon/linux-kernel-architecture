@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">组织进程</div>
 
-  <div class="content process进程_content_css">
+  <div class="content 进程_content_css">
     <p>运行队列链表把处于TASK_RUNNING状态的所有进程组织在一起，当要求把其他状态的进程分组时，不同的状态要求不同的处理，Linux选择了下列方式之。</p>
 
 <p>没有为处于TASK_STOPPED、EXIT_ZOMBIE或EXIT_DEAD状态的进程建立专门的链表。由于对处理暂停、僵死、死亡状态的进程访问比较简单，或者通过PID，或者通过特定父进程的子进程链表，所以不必堆这三种状态进行分组。</p>
@@ -166,7 +166,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments process进程_comments_css">
+<div class="comments 进程_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

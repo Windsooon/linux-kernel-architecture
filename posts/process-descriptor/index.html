@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">进程描述符</div>
 
-  <div class="content process进程_content_css">
+  <div class="content 进程_content_css">
     <p>为了进程管理，内核必须对每个进程所做的事情进行清楚的描述。比如内核需要知道进程的优先级，进程当前的状态，在挂起和恢复进程的时候，需要对进程进行相应的操作。进程描述符还描述了进程使用的地址空间，访问的文件等等，这些都是进程描述符的作用。</p>
 
 <p>进程描述符都是<em>task_struct</em>类型的结构，它的字段包含了与一个进程相关的所有信息。因为进程描述符中存放了那么多信息，所以它是非常复杂的，它不仅仅包括了很多进程属性的字段，还有一些字段包括了指向其他数据结构的指针，如下图：</p>
@@ -508,7 +508,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments process进程_comments_css">
+<div class="comments 进程_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">软中断守护进程</div>
 
-  <div class="content interrupt中断和异常_content_css">
+  <div class="content 中断和异常_content_css">
     <p>我们知道如果不在中断上下文中调用<em>raise_softirq</em>方法，则调用<em>wakeup_softirq</em>来唤醒软中断守护进程，这个守护进程会执行软中断。软中断的守护进程的任务是，与其余内核代码异步执行软中断，为此，系统中每个处理分配器都有自己的守护进程，名为<em>ksoftirqd</em>。</p>
 
 <p>内核中有两处调用了<em>wakeup_softirq</em>唤醒了该守护进程。</p>
@@ -187,7 +187,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments interrupt中断和异常_comments_css">
+<div class="comments 中断和异常_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

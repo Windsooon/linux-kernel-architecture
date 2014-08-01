@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">内核一致性</div>
 
-  <div class="content basic基础_content_css">
+  <div class="content 基础_content_css">
     <p>内核的另一个重要的保证就是一致性（<em>consistent</em>）状态，如果内核对某一个控制路径所需要的数据进行挂起，那么其他的内核控制路径<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>就不应该再对这个数据进行修改，除非重新被设置成一致性状态。否则会给计算机造成非常严重的数据伤害<sup id="fnref:2"><a href="#fn:2" class="footnote">2</a></sup>。</p>
 
 <p>当某个计算结果取决于如何调度两个或多个进程时，相关代码就时不正确的，这是一种竞争条件（<em>race condition</em>）。要避免这种情况，对全局变量的安全访问通过原子操作（atomic operation）。这种问题和线程安全面临的是同样问题，但内核需要更加严谨的对待。不过，现在已经有几种技术被采用，以便同步内核控制路径。</p>
@@ -175,7 +175,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments basic基础_comments_css">
+<div class="comments 基础_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

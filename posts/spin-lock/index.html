@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">自旋锁</div>
 
-  <div class="content kernel_preemption内核同步_content_css">
+  <div class="content 内核同步_content_css">
     <p>在同步技术中，最为广泛应用的就是加锁（<em>locking</em>）机制了。当内核控制路径必须访问共享数据结构或进入临界区时，就需要为自己获取一把『锁』。由锁机制保护的资源非常类似于限制于房间内的资源，如果某人进入房间，就把门锁上，等这个人使用完成后，后面的人才可以使用。</p>
 
 <p>当内核控制路径希望访问某个同步的资源，就需要试图获取钥匙『打开门』，当且仅当资源空闲时，它才能成功，然后，只要它还想继续使用这个资源，那么锁就会一直关闭着。当内核控制路径不再使用资源，就释放了锁，门就打开了，另一个内核控制路径就可以访问。</p>
@@ -234,7 +234,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments kernel_preemption内核同步_comments_css">
+<div class="comments 内核同步_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

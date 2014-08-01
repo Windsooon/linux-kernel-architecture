@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">进程内核模式</div>
 
-  <div class="content basic基础_content_css">
+  <div class="content 基础_content_css">
     <p>内核把虚拟空间地址划分为两个部分，因此能够保护各个系统进程，使它们彼此隔离起来。所有的现代的CPU都提供了几种特权级别，进程可以驻留在某一个特权级别。每个特权级别都有一些限制，例如对执行某些指令的限制，或者访问特定空间的限制。</p>
 
 <p>各种不同的计算机有不同的特权级别限制，Linux通常只使用两种不同的状态：核心态和用户态。两种状态的关键差别在于对高于TASK_SIZE的地址区域的访问。简而言之，用户状态的进程无法访问高于TASK_SIZE地址的内存，也无法执行内核空间的代码，这个区域是内核的专用区别。当然，如果用户处于核心态的话，这种限制就不再满足。</p>
@@ -167,7 +167,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments basic基础_comments_css">
+<div class="comments 基础_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

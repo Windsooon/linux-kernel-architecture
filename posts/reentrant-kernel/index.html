@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">可重入内核</div>
 
-  <div class="content basic基础_content_css">
+  <div class="content 基础_content_css">
     <p>所有的Unix内核都是可重入的（<em>reentrant</em>），这表示若干进程可以同时在内核态下执行。不过，取决于CPU的数量，单核处理器的系统上只有一个进程在真正执行。但是有许多进程可能在等待CPU或者I/O操作完成时在内核状态下被阻塞<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>。</p>
 
 <p>提供可重入的一种方式是编写函数，以便这些函数只能修改局部变量，而不能改变全局的数据结构，这样的函数叫可重入函数。但是可重入内核不仅仅局限于这样的可重入函数，相反，可重入内核可以包含非重入函数。并且利用锁机制保证一次只有一个进程执行一个非重入函数。</p>
@@ -149,7 +149,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments basic基础_comments_css">
+<div class="comments 基础_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

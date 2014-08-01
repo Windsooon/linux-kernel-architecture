@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">读-拷贝-更新</div>
 
-  <div class="content kernel_preemption内核同步_content_css">
+  <div class="content 内核同步_content_css">
     <p>读-拷贝-更新（<em>RCU</em>）是为了保护在多数情况下被多个CPU读的数据结构而设计的一种同步技术，RCU允许多个读者和写者并发执行，相对于值允许一个写者执行的顺序锁，RCU有了本质上的改进。</p>
 
 <p>简单的说RCU的逻辑是，当读者指向共享数据结构时，一旦有写者需要对共享数据结构进行写操作，那么写者就创建一个共享数据结构的副本，当完成写操作之后，将所有的读者指向新的数据结构，然后释放旧的数据结构即可。</p>
@@ -186,7 +186,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments kernel_preemption内核同步_comments_css">
+<div class="comments 内核同步_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

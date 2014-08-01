@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">工作队列</div>
 
-  <div class="content interrupt中断和异常_content_css">
+  <div class="content 中断和异常_content_css">
     <p>在Linux2.6中引入了工作队列，用来代替早期的任务队列，它们允许内核函数被激活，而且稍后由一种叫做工作者线程（<em>worker thread</em>）的特殊内核线程来执行。</p>
 
 <p>尽管可延迟函数和工作队列非常相似，但是它们的区别还是很大，主要的区别在于，可延迟函数运行在中断上下文中，而工作队列中的函数运行在进程上下文中。执行可租色函数的唯一方式是在进程上下文中运行，因为，正如<a href="/linux-kernel-architecture/posts/loop-interrupt/">处理程序的嵌套执行</a>中提到的，在中断上下文中不可能发生进程切换。</p>
@@ -562,7 +562,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments interrupt中断和异常_comments_css">
+<div class="comments 中断和异常_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

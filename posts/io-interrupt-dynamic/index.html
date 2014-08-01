@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">动态分配IRQ线</div>
 
-  <div class="content interrupt中断和异常_content_css">
+  <div class="content 中断和异常_content_css">
     <p>IRQ中除了几个向量留给特定的设备，其余的向量都被动态地分配，因此有一种方式下同一条IRQ线可以让几个硬件设备使用，即使这些设备不允许IRQ共享，技巧就是使这些硬件设备的活动串行化，以便一次只能有一个设备拥有这个IRQ线。</p>
 
 <p>在激活一个准备利用IRQ线的设备之前，其相应的驱动程序调用<em>request_irq()</em>，这个函数建立一个新的<em>irqaction</em>描述符，并用参数值初始化它。然后调用<em>setup_irq()</em>函数把这个描述符插入到合适的IRQ链表。</p>
@@ -139,7 +139,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments interrupt中断和异常_comments_css">
+<div class="comments 中断和异常_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

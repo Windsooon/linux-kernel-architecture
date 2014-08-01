@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">内核信号量</div>
 
-  <div class="content kernel_preemption内核同步_content_css">
+  <div class="content 内核同步_content_css">
     <p>内核信号量类似于自旋锁，因为当锁关闭着，它不允许内核控制路径继续执行，然而，当内核控制路径试图获取内核信号量所保护的忙资源时，相应的进程被挂起，只有在资源被释放时，进程才再次变为可运行状态。因此，只有可以睡眠的函数才能获取内核信号量，中断处理程序和可延迟函数都不能使用内核信号量。</p>
 
 <p>内核信号量是<em>semaphore</em>类型的对象，代码如下：</p>
@@ -164,7 +164,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments kernel_preemption内核同步_comments_css">
+<div class="comments 内核同步_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

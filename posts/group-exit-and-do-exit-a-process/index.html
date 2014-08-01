@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">进程退出</div>
 
-  <div class="content process进程_content_css">
+  <div class="content 进程_content_css">
     <p>很多进程终止了它们需要执行的代码，这些进程就已经结束了，当这种情况发生时，就必须通知内核以便内核释放进程所拥有的资源，包括内存、打开的文件描述符、信号量之类的东西。</p>
 
 <p>进程终止的一般方式时调用exit()库函数，该函数释放C函数库锁分配的资源，执行编程者锁注册的每一个函数，并结束从系统回收进程的那个系统调用。exit()函数可能由编程者显式地插入。另外，C编译程序总是把exit()函数插入到main()函数的最后一条语句。</p>
@@ -318,7 +318,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments process进程_comments_css">
+<div class="comments 进程_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

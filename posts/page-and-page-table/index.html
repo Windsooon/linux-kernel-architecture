@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">页表的数据结构</div>
 
-  <div class="content mm_manage内存管理_content_css">
+  <div class="content 内存管理_content_css">
     <p>在<a href="/linux-kernel-architecture/posts/system-paging-unit/">硬件中的分页</a>中记录了什么是页、页帧和页表，页帧的数据结构已经在<a href="/linux-kernel-architecture/posts/system-paging-unit/">内存管理</a>中详细记录了，这里主要记录一下页表的数据结构。</p>
 
 <p>从内存寻址的笔记可以知道，页表用于支持对大地址空间的快速、高效的管理。内核内存管理总是假定使用四级页表，而不管底层处理器是否这样，有的系统只使用两级分页系统，只要把高位的UPPER DIRECTORY和MIDDLE DIRECTORY指定为1即可。但内核还是保留指针，以便使用相同的代码。</p>
@@ -224,7 +224,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments mm_manage内存管理_comments_css">
+<div class="comments 内存管理_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

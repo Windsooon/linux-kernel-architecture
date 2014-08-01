@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">内核抢占</div>
 
-  <div class="content kernel_preemption内核同步_content_css">
+  <div class="content 内核同步_content_css">
     <p>我们可以把内核看作是不断对请求响应的一个服务器，这些请求可能来自在CPU上执行的进程，也可能来自发出中断请求的外部设备。内核的各个部分不是严格按照顺序依次自行的，而是采用交错执行的方式，这和进程切换的感觉是一样。所以，这些请求可能引起竞态条件，所以内核需要对这种情况进行适当的控制，这需要一些同步机制。</p>
 
 <p>内核可以被看作是必须满足两种请求的服务器，一种请求来自中断，一种来自进程。</p>
@@ -276,7 +276,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments kernel_preemption内核同步_comments_css">
+<div class="comments 内核同步_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

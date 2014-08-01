@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">读/写自旋锁</div>
 
-  <div class="content kernel_preemption内核同步_content_css">
+  <div class="content 内核同步_content_css">
     <p>读/写自旋锁的引入是为了增加内核的并发能力，只要没有内核控制路径对数据结构进行修改，读/写自旋锁就允许多个内核控制路径同时读一个数据结构，如果一个内核控制路径想对这个数据结构进行操作，那么它必须首先获取读/写自旋锁的写锁，写锁的授权独占访问这个资源。当然，允许对数据结构的并发可以提高系统性能。</p>
 
 <p>每个读/写自旋锁都是一个<em>rwlock_t</em>结构，代码如下：</p>
@@ -198,7 +198,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments kernel_preemption内核同步_comments_css">
+<div class="comments 内核同步_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

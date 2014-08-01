@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">完成量</div>
 
-  <div class="content process进程_content_css">
+  <div class="content 进程_content_css">
     <p>完成量（<em>completion</em>）机制基于等待队列，内核利用这个机制等待某一个操作结束，这两种机制使用得都比较频繁，主要用于设备的驱动程序。完成量与信号量有些相似，但完成量是基于等待队列实现的。</p>
 
 <p>我们只感兴趣完成量的接口。在场景中有两个参与者，一个在等待某操作的完成，而另一个在操作完成时发出声明，实际上，这已经被简化过了。实际上，可以有任意数目的进程等待操作完成，为表示进程等待的即将完成的『某操作』，内核使用了<em>complietion</em>数据结构，代码如下：</p>
@@ -212,7 +212,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments process进程_comments_css">
+<div class="comments 进程_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

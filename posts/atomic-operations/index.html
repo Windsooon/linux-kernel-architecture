@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">原子操作</div>
 
-  <div class="content kernel_preemption内核同步_content_css">
+  <div class="content 内核同步_content_css">
     <p>有些汇编语言指令具有『读』、『写』、『修改』三种类型，也就是说，它们有时候是以只读的形式从寄存器中读取内容，也有的时候以只读的形式向寄存器中写入内容。</p>
 
 <p>假定运行在两个CPU上的两个内核控制路径试图通过非原子的操作来同时修改一个存储单元，首先两个CPU都试图同时进行读操作，存储器仲裁器<sup id="fnref:1"><a href="#fn:1" class="footnote">1</a></sup>进行干预，只允许其中一个访问而让另一个延迟。当第一个操作已经完成后，延迟的CPU从那个存储单元正好读到一个旧的值，这没有关系。</p>
@@ -255,7 +255,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments kernel_preemption内核同步_comments_css">
+<div class="comments 内核同步_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

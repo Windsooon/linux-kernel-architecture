@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">进程生命周期</div>
 
-  <div class="content process进程_content_css">
+  <div class="content 进程_content_css">
     <p>进程并不是总是可以立即运行的，有时候进程需要等待来自外部的信号源、不受其控制的事件，例如在文本编辑器中等待键盘输入，在事件发生之前，进程都无法运行。当进程调度器运行的时候，必须知道系统中每个进程的状态。将CPU时间分配到无事可做的进程是没有意义而且也是浪费资源的。进程在各个状态之间的转换也同样重要，如果一个进程在等待来自外设的数据，那么调度器的职责是一旦数据已经到达，则需要将进程的状态由等待改为可运行（<em>TASK_RUNNING</em>）。</p>
 
 <p>进程的运行状态可以看<a href="http://guojing.me/linux-kernel-architecture/posts/process-descriptor/">《进程描述符》</a>。</p>
@@ -157,7 +157,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments process进程_comments_css">
+<div class="comments 进程_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

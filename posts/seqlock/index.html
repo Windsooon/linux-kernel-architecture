@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">顺序锁</div>
 
-  <div class="content kernel_preemption内核同步_content_css">
+  <div class="content 内核同步_content_css">
     <p>当使用读/写自旋锁时，内核控制路径发出的执行<em>read_lock</em>或<em>write_lock</em>操作的请求具有相同的优先级，读者必须等待，直到写操作完成，同样，写者也必须等待，直到读操作的完成。</p>
 
 <p>Linux2.6中引入了顺序锁（<em>seqlock</em>），它与读/写自旋锁非常相似，只是它为写者赋予了较高的优先级，事实上，即使在读者正在读的时候也可以允许写者继续运行。这种策略的好处时写者永远不会等待，除非另一个写者也尝试写入同样的一个数据结构。但同样有缺点，缺点时有些时候读者不得不反复多次读取相同的数据结构直到获得它有效的副本。</p>
@@ -194,7 +194,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments kernel_preemption内核同步_comments_css">
+<div class="comments 内核同步_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">中断描述符表</div>
 
-  <div class="content interrupt中断和异常_content_css">
+  <div class="content 中断和异常_content_css">
     <p>中断描述符表（<em>Interrupt Descriptor Table，IDT</em>）是一个系统表，它与每一个中断或异常向量相联系，每一个向量在表中有相应地中断或异常处理程序地入口地址，内核在允许中断发生前，必须适当地初始化IDT。</p>
 
 <p>GDT和IDT地格式非常相似，表中地每一项对应一个中断或异常向量，每个向量由8个字节组成，因此，最多需要256x8=2048字节来存放IDT。<em>idtr</em>CPU寄存器使IDT可以位于内存地任何地方，它指定IDT地线性地址及其限制地最大长度。在允许中断之前，必须用<em>lidt</em>汇编指令初始化<em>idtr</em></p>
@@ -182,7 +182,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments interrupt中断和异常_comments_css">
+<div class="comments 中断和异常_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">处理程序的嵌套执行</div>
 
-  <div class="content interrupt中断和异常_content_css">
+  <div class="content 中断和异常_content_css">
     <p>每个中断或异常都会引起一个内核控制路径，或者说代表当前进程在内核态执行单独的指令序列。我们再来回顾一下什么是内核控制路径。内核控制路径（kernel control path）表示内核处理系统调用、异常或中断所执行的指令序列。所以，我们只要知道内核控制路径是一些指令序列即可。</p>
 
 <p>当I/O设备发出一个中断时，相应的内核控制路径的第一部分指令就是那些把寄存器的内容保存在内核堆栈的指令，而最后一部分指令就是恢复寄存器内容并让CPU返回到用户态的哪些指令。</p>
@@ -148,7 +148,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments interrupt中断和异常_comments_css">
+<div class="comments 中断和异常_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

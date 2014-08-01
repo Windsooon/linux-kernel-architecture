@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">中断处理</div>
 
-  <div class="content interrupt中断和异常_content_css">
+  <div class="content 中断和异常_content_css">
     <p>内核只要给引起异常的进程发送一个信号就可以处理异常，如果程序自己不处理异常，那么就让内核处理，内核通常会杀死进程。但是这种方法并不适合中断，因为经常会出现一个进程被挂起好久后中断才达到，或者切换到另外一个进程，所以当中断到来的时候，一个可能完全无关的进程正在运行，所以给当前进程发送一个信号是没有用的。</p>
 
 <p>例如当程序员在一个编辑器开发程序，需要输入，这个时候进程切换到一个浏览器的Tab，这个时候程序员通过键盘输入产生了一个中断，这个中断响应在浏览器上是毫无作用的，所以需要其他方法来处理中断。中断处理依赖于中断类型，主要有三种中断：</p>
@@ -138,7 +138,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments interrupt中断和异常_comments_css">
+<div class="comments 中断和异常_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">内存管理区</div>
 
-  <div class="content mm_manage内存管理_content_css">
+  <div class="content 内存管理_content_css">
     <p>我们习惯性的认为计算机内存是一种均匀、共享的资源。在忽略硬件高速缓存作用的情况下，我们期望内存单元无论在何处，也不管CPU在何处，CPU对内存单元的访问都需要相同的时间。可惜事实并不如此。实际上，给定的CPU对不同内存单元的访问时间可能不一样。系统的物理内存被分为好几个结点。</p>
 
 <p>内存划分为<strong>结点</strong>(<em>node</em>)，每个结点关联到系统中的一个处理器，在内核中表示为<em>pg_data_t</em>的实例。各个结点又划分为<strong>内存域</strong>（<em>Zone</em>），这是内存的进一步细分。大致结构如下：</p>
@@ -510,7 +510,7 @@ There is one way to join the two lists: Use a single list and put the cold pages
 </div>
 
 <!--
-<div class="comments mm_manage内存管理_comments_css">
+<div class="comments 内存管理_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>

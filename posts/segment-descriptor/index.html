@@ -92,7 +92,7 @@ function getURLParameter(name) {
 <div class="main clearfix">
   <div class="title">段描述符</div>
 
-  <div class="content mm内存寻址_content_css">
+  <div class="content 内存寻址_content_css">
     <p>每个段由一个8字节的段描述符（<em>Segment Descriptor</em>）表示，它描述了段的特征。段描述符放在全局描述符表（<em>Global Descriptor Table，GDT</em>）或局部描述符表（<em>Local Descriptor Table，LDT</em>）中。</p>
 
 <p>通常只定义一个GDT，而每个进程除了存放在GDT中的段之外如果还需要创建附加的段，可以拥有自己的LDT。GDT在主存中的地址和大小存在<em>gdtr</em>控制寄存器中，当前正被使用的LDT地址和大小放在<em>ldtr</em>控制寄存器中。</p>
@@ -198,7 +198,7 @@ function getURLParameter(name) {
 </div>
 
 <!--
-<div class="comments mm内存寻址_comments_css">
+<div class="comments 内存寻址_comments_css">
 <div id="disqus_container"> 
     
     <a href="#" class="comment" onclick="return false;">点击评论或查看评论。</a>
